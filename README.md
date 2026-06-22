@@ -441,6 +441,10 @@ Test playback independently:
 python tool/openseeface_play_packet.py neutral.osf.bin --loop
 ```
 
+## Related Projects
+
+- [NewComer00/live-ascii](https://github.com/NewComer00/live-ascii) (forked from [Arcelyth/live-ascii](Arcelyth/live-ascii), Copyright (c) 2026 Arcelyth, MIT License)
+
 ## License
 
 MIT
