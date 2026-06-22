@@ -8,6 +8,7 @@ const PLUGIN_PERMISSIONS: &[PermissionType] = include!(
 struct State {
     manifest: PaneManifest,
     chobits_send_bin: String,
+    zellij_bin: String,
     interval_secs: f64,
 }
 
@@ -16,6 +17,7 @@ impl Default for State {
         State {
             manifest: PaneManifest::default(),
             chobits_send_bin: "chobits-send".into(),
+            zellij_bin: "zellij".into(),
             interval_secs: 10.0,
         }
     }
@@ -29,6 +31,11 @@ impl ZellijPlugin for State {
             .get("chobits_send_bin")
             .cloned()
             .unwrap_or_else(|| "chobits-send".into());
+
+        self.zellij_bin = configuration
+            .get("zellij_bin")
+            .cloned()
+            .unwrap_or_else(|| "zellij".into());
 
         self.interval_secs = configuration
             .get("interval_secs")
@@ -102,7 +109,7 @@ impl State {
                     ctx.insert("tab".to_string(), tab_idx.to_string());
                     ctx.insert("cmd".to_string(), cmd_str);
                     run_command(
-                        &["zellij", "action", "dump-screen",
+                        &[&self.zellij_bin, "action", "dump-screen",
                           "--pane-id", &pane_id_str],
                         ctx,
                     );

@@ -27,6 +27,7 @@ use directories::BaseDirs;
 ///   `{live_ascii_bin}`       — absolute path to the bundled `live-ascii` binary
 ///   `{chobits_bar_bin}`      — absolute path to the bundled `chobits-bar` binary
 ///   `{chobits_send_bin}`     — absolute path to the bundled `chobits-send` binary
+///   `{zellij_bin}`           — absolute path to the bundled `zellij` binary
 pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
     pane split_direction="vertical" {
         pane focus=true
@@ -38,6 +39,7 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
+                zellij_bin "{zellij_bin}"
                 chobits_send_bin "{chobits_send_bin}"
                 interval_secs "{interval_secs}"
             }
@@ -246,6 +248,7 @@ fn escape_kdl_path(p: &Path) -> String {
 /// - `{live_ascii_bin}`       — absolute path to the bundled live-ascii binary
 /// - `{chobits_bar_bin}`      — absolute path to the bundled chobits-bar binary
 /// - `{chobits_send_bin}`     — absolute path to the bundled chobits-send binary
+/// - `{zellij_bin}`           — absolute path to the bundled zellij binary
 ///
 /// Binaries are referenced by absolute path (rather than a bare name looked
 /// up on `$PATH`) so the generated layout works whether or not
@@ -258,6 +261,7 @@ pub fn build_layout_kdl_from(
     live_ascii_bin: &Path,
     chobits_bar_bin: &Path,
     chobits_send_bin: &Path,
+    zellij_bin: &Path,
 ) -> String {
     template
         .replace("{plugin_path}", &escape_kdl_path(plugin_wasm))
@@ -266,6 +270,7 @@ pub fn build_layout_kdl_from(
         .replace("{live_ascii_bin}", &escape_kdl_path(live_ascii_bin))
         .replace("{chobits_bar_bin}", &escape_kdl_path(chobits_bar_bin))
         .replace("{chobits_send_bin}", &escape_kdl_path(chobits_send_bin))
+        .replace("{zellij_bin}", &escape_kdl_path(zellij_bin))
 }
 
 pub fn build_layout_kdl(
@@ -275,6 +280,7 @@ pub fn build_layout_kdl(
     live_ascii_bin: &Path,
     chobits_bar_bin: &Path,
     chobits_send_bin: &Path,
+    zellij_bin: &Path,
 ) -> String {
     build_layout_kdl_from(
         DEFAULT_LAYOUT_KDL,
@@ -284,6 +290,7 @@ pub fn build_layout_kdl(
         live_ascii_bin,
         chobits_bar_bin,
         chobits_send_bin,
+        zellij_bin,
     )
 }
 

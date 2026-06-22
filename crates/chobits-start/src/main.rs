@@ -88,6 +88,7 @@ fn main() {
     let live_ascii_bin = chobits::config::find_executable("live-ascii");
     let chobits_bar_bin = chobits::config::find_executable("chobits-bar");
     let chobits_send_bin = chobits::config::find_executable("chobits-send");
+    let zellij_bin = chobits::config::find_executable("zellij");
 
     // Use user layout from config.toml if present, else fall back to embedded default.
     // Either way, substitute runtime templates (including bundled binary paths)
@@ -101,6 +102,7 @@ fn main() {
         &live_ascii_bin,
         &chobits_bar_bin,
         &chobits_send_bin,
+        &zellij_bin,
     );
 
     // 4. Create Zellij directories and write layout.kdl
@@ -127,7 +129,6 @@ fn main() {
     }
 
     // 6. Launch zellij — prefer the bundled bin/local/zellij(.exe), fall back to $PATH
-    let zellij_bin = chobits::config::find_executable("zellij");
     println!("[start] Launching zellij ({:?})...", zellij_bin);
     let session_name = format!("chobits-{}", timestamp);
     println!("[start] Session name: {session_name}");
