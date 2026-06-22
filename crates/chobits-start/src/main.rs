@@ -87,6 +87,7 @@ fn main() {
     let wasm_path = find_wasm("chobits-zellij.wasm");
     let live_ascii_bin = chobits::config::find_executable("live-ascii");
     let chobits_bar_bin = chobits::config::find_executable("chobits-bar");
+    let chobits_send_bin = chobits::config::find_executable("chobits-send");
 
     // Use user layout from config.toml if present, else fall back to embedded default.
     // Either way, substitute runtime templates (including bundled binary paths)
@@ -99,6 +100,7 @@ fn main() {
         &live_ascii_args,
         &live_ascii_bin,
         &chobits_bar_bin,
+        &chobits_send_bin,
     );
 
     // 4. Create Zellij directories and write layout.kdl

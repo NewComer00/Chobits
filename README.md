@@ -310,7 +310,9 @@ config_dir = ".zellij/config"
 data_dir   = ".zellij/data"
 layout     = """
 layout {
-    pane size=1 borderless=true { plugin location="tab-bar" }
+    pane size=1 borderless=true {
+        plugin location="tab-bar"
+    }
     pane split_direction="vertical" {
         pane focus=true
         pane split_direction="horizontal" size="30%" {
@@ -321,11 +323,14 @@ layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
+                chobits_send_bin "{chobits_send_bin}"
                 interval_secs "{interval_secs}"
             }
         }
     }
-    pane size=1 borderless=true { plugin location="status-bar" }
+    pane size=1 borderless=true {
+        plugin location="status-bar"
+    }
 }
 """
 ```

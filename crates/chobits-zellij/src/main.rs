@@ -7,6 +7,7 @@ const PLUGIN_PERMISSIONS: &[PermissionType] = include!(
 
 struct State {
     manifest: PaneManifest,
+    chobits_send_bin: String,
     interval_secs: f64,
 }
 
@@ -14,7 +15,8 @@ impl Default for State {
     fn default() -> Self {
         State {
             manifest: PaneManifest::default(),
-            interval_secs: 5.0,
+            chobits_send_bin: "chobits-send".into(),
+            interval_secs: 10.0,
         }
     }
 }
@@ -23,10 +25,15 @@ register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
+        self.chobits_send_bin = configuration
+            .get("chobits_send_bin")
+            .cloned()
+            .unwrap_or_else(|| "chobits-send".into());
+
         self.interval_secs = configuration
             .get("interval_secs")
             .and_then(|v| v.parse().ok())
-            .unwrap_or(5.0);
+            .unwrap_or(10.0);
 
         request_permission(PLUGIN_PERMISSIONS);
 
@@ -65,7 +72,7 @@ impl ZellijPlugin for State {
                         );
                         let mut ctx = BTreeMap::new();
                         ctx.insert("type".to_string(), "snapshot".to_string());
-                        run_command(&["chobits-send", "--text", &snapshot], ctx);
+                        run_command(&[&self.chobits_send_bin, "--text", &snapshot], ctx);
                     }
                 }
                 false

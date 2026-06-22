@@ -54,8 +54,8 @@ offset_y       = "95%"                         # vertical offset % of panel heig
 config_dir     = ".zellij/config"
 data_dir       = ".zellij/data"
 # Zellij Layout
-# {plugin_path}, {live_ascii_bin}, and {chobits_bar_bin} are filled in at launch time
-# with absolute paths to the bundled binaries — keep them as literal placeholders.
+# {plugin_path}, {live_ascii_bin}, {chobits_bar_bin}, and {chobits_send_bin} are filled in
+# at launch time with absolute paths to the bundled binaries — keep them as literal placeholders.
 # {live_ascii_args} is built from the [live-ascii] section above.
 # {interval_secs} is built from the [snapshot] section above.
 layout = """
@@ -73,6 +73,7 @@ layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
+                chobits_send_bin "{chobits_send_bin}"
                 interval_secs "{interval_secs}"
             }
         }

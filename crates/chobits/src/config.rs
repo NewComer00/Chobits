@@ -21,11 +21,12 @@ use directories::BaseDirs;
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 /// Default Zellij layout.  Templates filled in at launch time:
-///   `{plugin_path}`     — absolute path to the `.wasm` file
-///   `{interval_secs}`   — polling interval in seconds
-///   `{live_ascii_args}` — live-ascii CLI args built from `[live-ascii]`
-///   `{live_ascii_bin}`  — absolute path to the bundled `live-ascii` binary
-///   `{chobits_bar_bin}` — absolute path to the bundled `chobits-bar` binary
+///   `{plugin_path}`          — absolute path to the `.wasm` file
+///   `{interval_secs}`        — polling interval in seconds
+///   `{live_ascii_args}`      — live-ascii CLI args built from `[live-ascii]`
+///   `{live_ascii_bin}`       — absolute path to the bundled `live-ascii` binary
+///   `{chobits_bar_bin}`      — absolute path to the bundled `chobits-bar` binary
+///   `{chobits_send_bin}`     — absolute path to the bundled `chobits-send` binary
 pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
     pane split_direction="vertical" {
         pane focus=true
@@ -37,6 +38,7 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
+                chobits_send_bin "{chobits_send_bin}"
                 interval_secs "{interval_secs}"
             }
         }
@@ -238,11 +240,12 @@ fn escape_kdl_path(p: &Path) -> String {
 }
 
 /// Build the final KDL layout, filling in runtime values:
-/// - `{plugin_path}`     — absolute path to the WASM plugin
-/// - `{interval_secs}`   — polling interval from config
-/// - `{live_ascii_args}` — args for the live-ascii command
-/// - `{live_ascii_bin}`  — absolute path to the bundled live-ascii binary
-/// - `{chobits_bar_bin}` — absolute path to the bundled chobits-bar binary
+/// - `{plugin_path}`          — absolute path to the WASM plugin
+/// - `{interval_secs}`        — polling interval from config
+/// - `{live_ascii_args}`      — args for the live-ascii command
+/// - `{live_ascii_bin}`       — absolute path to the bundled live-ascii binary
+/// - `{chobits_bar_bin}`      — absolute path to the bundled chobits-bar binary
+/// - `{chobits_send_bin}`     — absolute path to the bundled chobits-send binary
 ///
 /// Binaries are referenced by absolute path (rather than a bare name looked
 /// up on `$PATH`) so the generated layout works whether or not
@@ -254,6 +257,7 @@ pub fn build_layout_kdl_from(
     live_ascii_args: &str,
     live_ascii_bin: &Path,
     chobits_bar_bin: &Path,
+    chobits_send_bin: &Path,
 ) -> String {
     template
         .replace("{plugin_path}", &escape_kdl_path(plugin_wasm))
@@ -261,6 +265,7 @@ pub fn build_layout_kdl_from(
         .replace("{live_ascii_args}", live_ascii_args)
         .replace("{live_ascii_bin}", &escape_kdl_path(live_ascii_bin))
         .replace("{chobits_bar_bin}", &escape_kdl_path(chobits_bar_bin))
+        .replace("{chobits_send_bin}", &escape_kdl_path(chobits_send_bin))
 }
 
 pub fn build_layout_kdl(
@@ -269,6 +274,7 @@ pub fn build_layout_kdl(
     live_ascii_args: &str,
     live_ascii_bin: &Path,
     chobits_bar_bin: &Path,
+    chobits_send_bin: &Path,
 ) -> String {
     build_layout_kdl_from(
         DEFAULT_LAYOUT_KDL,
@@ -277,6 +283,7 @@ pub fn build_layout_kdl(
         live_ascii_args,
         live_ascii_bin,
         chobits_bar_bin,
+        chobits_send_bin,
     )
 }
 
