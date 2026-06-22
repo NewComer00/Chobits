@@ -2,6 +2,8 @@
 
 A cross-platform live2D terminal companion living inside Zellij driven by LLM.
 
+<img width="1917" height="967" alt="image" src="https://github.com/user-attachments/assets/254a2289-e404-48a2-b47b-63852bd28a78" />
+
 ## Build From Source
 
 ### Supported Platforms
@@ -139,7 +141,7 @@ Move the `Chobits/` folder wherever you want. For MSYS2 UCRT64/MINGW64 users, yo
 Chobits/
 ├── .chobits-root
 ├── bin
-│   └── chobits.exe
+│   └── chobits-start.exe
 ├── config.toml
 ├── expressions
 │   ├── blink.osf.bin
@@ -152,9 +154,9 @@ Chobits/
 │   └── thinking.osf.bin
 ├── local
 │   └── bin
+│       ├── chobits.exe
 │       ├── chobits-bar.exe
 │       ├── chobits-send.exe
-│       ├── chobits-start.exe
 │       ├── chobits-zellij.wasm
 │       ├── live-ascii.exe
 │       └── zellij.exe
