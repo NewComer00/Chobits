@@ -1,0 +1,84 @@
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                         Chobits  —  config.toml                           ║
+# ╠═══════════════════════════════════════════════════════════════════════════╣
+# ║  Paths may be absolute or relative.                                       ║
+# ║  Relative paths are resolved against the folder this file lives in        ║
+# ║  (the Chobits root), regardless of where the app was launched from.       ║
+# ║  Edit, save, restart  —  chobits-start picks up changes on next launch.   ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+[ports]
+snapshot = 7878                                # TCP — daemon receives snapshots here
+bar      = 7879                                # TCP — daemon sends text reactions here
+osf      = 11573                               # UDP — daemon sends OSF frames here
+
+[llm]
+backend    = "ollama"                          # "ollama" | anything else = openai-compatible
+url        = "http://localhost:11434"          # API base URL
+model      = "qwen3:0.6b"                      # model name
+max_tokens = 512                               # max tokens per response
+# api_key  = "sk-..."                          # only needed for OpenAI-compatible backends
+
+[snapshot]
+max_bytes = 4096                               # truncate large terminal snapshots (head + tail)
+interval_secs = 10                             # plugin dump-screen polling interval
+
+[persona]
+# The character's name and personality. Format instructions and the expression
+# list are generated automatically from the filesystem.
+name        = "Chi"
+description = """
+Curious and warm terminal companion.
+You speak in short, casual reactions — one or two sentences max.
+You genuinely care about what the user is working on.
+"""
+
+[expressions]
+dir               = "expressions"              # folder containing expression .osf.bin files
+idle_timeout_secs = 30                         # seconds of silence before Chobits thinks you are not in front of the screen
+
+[live-ascii]
+# Live2D ASCII renderer — launched in a Zellij pane by chobits-start.
+model_set      = "models/hiyori_free/runtime/hiyori_free_t08.model3.json"
+enable_osf     = true                          # --camera (accept OSF frames)
+enable_mouse   = true                          # --mouse (drag to pan, scroll to zoom)
+enable_physics = true                          # --physics (hair/wind physics)
+image_protocol = "halfblock"                   # halfblock | kitty | sixel
+bg_color       = "rgba(0,0,0,0)"               # background behind the character
+scale          = "550%"                        # view scale percentage
+offset_x       = "0%"                          # horizontal offset % of panel width
+offset_y       = "95%"                         # vertical offset % of panel height
+
+[zellij]
+# Zellij stores its configuration and runtime data relative to the Chobits root
+config_dir     = ".zellij/config"
+data_dir       = ".zellij/data"
+# Zellij Layout
+# {plugin_path}, {live_ascii_bin}, and {chobits_bar_bin} are filled in at launch time
+# with absolute paths to the bundled binaries — keep them as literal placeholders.
+# {live_ascii_args} is built from the [live-ascii] section above.
+# {interval_secs} is built from the [snapshot] section above.
+layout = """
+layout {
+    pane size=1 borderless=true {
+        plugin location="tab-bar"
+    }
+    pane split_direction="vertical" {
+        pane focus=true
+        pane split_direction="horizontal" size="30%" {
+            pane command="{live_ascii_bin}" name="LIVE-ASCII" {
+                args {live_ascii_args}
+            }
+            pane command="{chobits_bar_bin}" size="30%" borderless=true
+        }
+        pane size=1 borderless=true {
+            plugin location="file:{plugin_path}" {
+                interval_secs "{interval_secs}"
+            }
+        }
+    }
+    pane size=1 borderless=true {
+        plugin location="status-bar"
+    }
+}
+"""

@@ -1,0 +1,15 @@
+[package]
+name = "chobits-bar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chobits-bar"
+path = "src/main.rs"
+
+[dependencies]
+chobits = { path = "../chobits" }
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { version = "1", features = ["full"] }

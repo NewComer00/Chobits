@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/chobits-meta",
+    "crates/chobits",
+    "crates/chobits-send",
+    "crates/chobits-zellij",
+    "crates/chobits-bar",
+    "crates/chobits-start",
+]
+# Exclude WASM-only crate from native builds
+default-members = [
+    "crates/chobits",
+    "crates/chobits-send",
+    "crates/chobits-bar",
+    "crates/chobits-start",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"

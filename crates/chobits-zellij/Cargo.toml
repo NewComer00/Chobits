@@ -1,0 +1,13 @@
+[package]
+name = "chobits-zellij"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zellij-tile = "0.44"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+chobits-meta = { path = "../chobits-meta" }
