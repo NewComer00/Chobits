@@ -1,7 +1,83 @@
 #![allow(dead_code)]
-//! Utilities for integrating with Zellij, such as pre-granting plugin permissions by
-//! writing to Zellij's `permissions.kdl` cache file.
+//! Utilities for integrating with Zellij
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::process::ExitStatus;
+
+pub struct ZellijRunner {
+    pub bin: PathBuf,
+    pub config_dir: PathBuf,
+    pub data_dir: PathBuf,
+}
+
+impl ZellijRunner {
+    pub fn new(bin: PathBuf, config_dir: PathBuf, data_dir: PathBuf) -> Self {
+        Self { bin, config_dir, data_dir }
+    }
+
+    fn base_cmd(&self) -> Command {
+        let mut cmd = Command::new(&self.bin);
+        cmd.args([
+            "--config-dir", &self.config_dir.to_string_lossy(),
+            "--data-dir",   &self.data_dir.to_string_lossy(),
+        ]);
+        cmd
+    }
+
+    pub fn passthrough(&self, args: &[String]) -> i32 {
+        self.base_cmd()
+            .args(args)
+            .status()
+            .map(|s| s.code().unwrap_or(0))
+            .unwrap_or_else(|e| {
+                eprintln!("[start] Failed to run zellij: {e}");
+                1
+            })
+    }
+
+    pub fn list_sessions(&self) -> Vec<String> {
+        let output = self.base_cmd()
+            .args(["list-sessions", "--no-formatting"])
+            .output();
+
+        let output = match output {
+            Ok(o) => o,
+            Err(_) => return vec![],
+        };
+
+        let text = if !output.stdout.is_empty() {
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        } else {
+            String::from_utf8_lossy(&output.stderr).into_owned()
+        };
+
+        text.lines()
+            .filter_map(|line| {
+                let name = line.split_whitespace().next()?.to_string();
+                if name.starts_with("chobits-") && !line.contains("EXITED") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn new_session(&self, session_name: &str, layout_path: &Path) -> std::io::Result<ExitStatus> {
+        self.base_cmd()
+            .args([
+                "--new-session-with-layout", &layout_path.to_string_lossy(),
+                "--session", session_name,
+            ])
+            .status()
+    }
+
+    pub fn attach(&self, session_name: &str) -> std::io::Result<ExitStatus> {
+        self.base_cmd()
+            .args(["attach", session_name])
+            .status()
+    }
+}
 
 /// Zellij's cache directory, built directly per-platform (not via
 /// `ProjectDirs::from`, since the qualifier/org/app triple Zellij itself

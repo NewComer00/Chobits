@@ -21,6 +21,7 @@ use directories::BaseDirs;
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
 /// Default Zellij layout.  Templates filled in at launch time:
+///   `{chobits_bin}`          — absolute path to the `chobits` daemon binary
 ///   `{plugin_path}`          — absolute path to the `.wasm` file
 ///   `{interval_secs}`        — polling interval in seconds
 ///   `{live_ascii_args}`      — live-ascii CLI args built from `[live-ascii]`
@@ -29,7 +30,13 @@ use directories::BaseDirs;
 ///   `{chobits_send_bin}`     — absolute path to the bundled `chobits-send` binary
 ///   `{zellij_bin}`           — absolute path to the bundled `zellij` binary
 pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
+    pane size=1 borderless=true {
+        plugin location="tab-bar"
+    }
     pane split_direction="vertical" {
+        pane size=1 borderless=true command="{chobits_bin}" {
+            args "--quiet"
+        }
         pane focus=true
         pane split_direction="horizontal" size="30%" {
             pane command="{live_ascii_bin}" name="LIVE-ASCII" {
@@ -44,6 +51,9 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
                 interval_secs "{interval_secs}"
             }
         }
+    }
+    pane size=1 borderless=true {
+        plugin location="status-bar"
     }
 }
 "#;
@@ -242,6 +252,7 @@ fn escape_kdl_path(p: &Path) -> String {
 }
 
 /// Build the final KDL layout, filling in runtime values:
+/// - `{chobits_bin}`          — absolute path to the chobits daemon binary
 /// - `{plugin_path}`          — absolute path to the WASM plugin
 /// - `{interval_secs}`        — polling interval from config
 /// - `{live_ascii_args}`      — args for the live-ascii command
@@ -255,6 +266,7 @@ fn escape_kdl_path(p: &Path) -> String {
 /// `<chobits-root>/bin/` has been added to `PATH`.
 pub fn build_layout_kdl_from(
     template: &str,
+    chobits_bin: &Path,
     plugin_wasm: &Path,
     interval_secs: u64,
     live_ascii_args: &str,
@@ -264,6 +276,7 @@ pub fn build_layout_kdl_from(
     zellij_bin: &Path,
 ) -> String {
     template
+        .replace("{chobits_bin}", &escape_kdl_path(chobits_bin))
         .replace("{plugin_path}", &escape_kdl_path(plugin_wasm))
         .replace("{interval_secs}", &interval_secs.to_string())
         .replace("{live_ascii_args}", live_ascii_args)
@@ -274,6 +287,7 @@ pub fn build_layout_kdl_from(
 }
 
 pub fn build_layout_kdl(
+    chobits_bin: &Path,
     plugin_wasm: &Path,
     interval_secs: u64,
     live_ascii_args: &str,
@@ -284,6 +298,7 @@ pub fn build_layout_kdl(
 ) -> String {
     build_layout_kdl_from(
         DEFAULT_LAYOUT_KDL,
+        chobits_bin,
         plugin_wasm,
         interval_secs,
         live_ascii_args,
@@ -362,6 +377,42 @@ pub fn find_executable(name: &str) -> PathBuf {
         let no_ext = dir.join(name);
         if no_ext.exists() {
             return no_ext;
+        }
+    }
+    PathBuf::from(name)
+}
+
+/// Locate `chobits-zellij.wasm`. Search order:
+/// 1. `<chobits-root>/local/bin/` — packaged layout
+/// 2. `<chobits-root>/bin/`       — fallback for unusual layouts
+/// 3. Walk up from the exe to find a Cargo workspace's
+///    `target/wasm32-wasip1/{debug,release}/` — useful for `cargo run`
+pub fn find_wasm(name: &str) -> PathBuf {
+    for dir in [local_bin_dir(), bin_dir()] {
+        let candidate = dir.join(name);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            let mut ancestor = dir;
+            loop {
+                for profile in &["debug", "release"] {
+                    let candidate = ancestor
+                        .join("target")
+                        .join("wasm32-wasip1")
+                        .join(profile)
+                        .join(name);
+                    if candidate.exists() {
+                        return candidate;
+                    }
+                }
+                match ancestor.parent() {
+                    Some(p) => ancestor = p,
+                    None => break,
+                }
+            }
         }
     }
     PathBuf::from(name)

@@ -1,11 +1,8 @@
-use std::fs::{self, OpenOptions};
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::fs;
 use chrono::Local;
 
 use chobits_meta::PLUGIN_PERMISSIONS;
+use chobits::zellij::ZellijRunner;
 
 fn main() {
     println!("╔══════════════════════════════════════╗");
@@ -15,195 +12,133 @@ fn main() {
     let config_dir = chobits::config::chobits_dir();
     let _ = fs::create_dir_all(&config_dir);
 
-    let daemon_binary = chobits::config::find_executable("chobits");
-
-    // Shared timestamp for this run's log file and zellij session name.
     let now = Local::now();
     let timestamp = now.format("%Y%m%d-%H%M%S").to_string();
 
-    // 1. Spawn chobits daemon with stdout/stderr → log file
-    let log_dir = chobits::config::log_dir();
-    let _ = fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join(format!("chobits-{}.log", timestamp));
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .unwrap_or_else(|e| {
-            eprintln!("[start] Failed to open log {:?}: {}", log_path, e);
-            std::process::exit(1);
-        });
-
-    println!("[start] Launching chobits daemon (log: {:?})...", log_path);
-    let mut daemon: Child = Command::new(&daemon_binary)
-        .stdout(Stdio::from(log_file.try_clone().unwrap()))
-        .stderr(Stdio::from(log_file))
-        .spawn()
-        .unwrap_or_else(|e| {
-            eprintln!("[start] Failed to start chobits daemon: {}", e);
-            eprintln!("[start] Looked for binary at: {:?}", daemon_binary);
-            std::process::exit(1);
-        });
-    println!("[start] Daemon PID: {}", daemon.id());
-
-    // 2. Wait for TCP :7878 to be ready
-    let snapshot_port = 7878u16;
-    let addr = format!("127.0.0.1:{}", snapshot_port);
-    println!("[start] Waiting for daemon on {}...", addr);
-
-    let max_attempts = 30;
-    let mut connected = false;
-    for attempt in 1..=max_attempts {
-        match TcpStream::connect(&addr) {
-            Ok(_) => {
-                connected = true;
-                println!("[start] Daemon ready after {} attempt(s)", attempt);
-                break;
-            }
-            Err(_) => {
-                if attempt < max_attempts {
-                    std::thread::sleep(Duration::from_millis(200));
-                }
-            }
-        }
-    }
-
-    if !connected {
-        eprintln!("[start] Daemon did not start within {} attempts", max_attempts);
-        let _ = daemon.kill();
-        std::process::exit(1);
-    }
-
-    // 3. Load config and build layout
+    // 1. Load config
     let config = chobits::Config::load().unwrap_or_else(|_| {
         eprintln!("[start] Warning: could not load config, using defaults");
         chobits::Config::default_config()
     });
+
+    let zellij_bin = chobits::config::find_executable("zellij");
+    let zellij_config_dir = config.zellij.config_dir.clone();
+    let zellij_data_dir = config.zellij.data_dir.clone();
+    let zellij = ZellijRunner::new(zellij_bin, zellij_config_dir.clone(), zellij_data_dir.clone());
+
+    // Early exit for subcommands
+    let mut args = std::env::args().skip(1);
+    if let Some(cmd) = args.next() {
+        match cmd.as_str() {
+            "zellij" => {
+                let rest: Vec<String> = args.collect();
+                std::process::exit(zellij.passthrough(&rest));
+            }
+            "help" | "--help" | "-h" => {
+                println!("Usage: chobits-start [COMMAND]");
+                println!();
+                println!("Commands:");
+                println!("  zellij <args>   Pass arguments to the bundled Zellij instance");
+                println!();
+                println!("Examples:");
+                println!("  chobits-start                  Launch or attach to a Chobits session");
+                println!("  chobits-start zellij ls        List Zellij sessions");
+                println!("  chobits-start zellij --help    Show Zellij help");
+                std::process::exit(0);
+            }
+            other => {
+                eprintln!("[start] Unknown command: {other}");
+                eprintln!("Run 'chobits-start --help' for usage.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // 2. Build layout
     let config_path = chobits::config::config_path();
-    let zellij_config_dir = config.zellij.config_dir;
-    let zellij_data_dir = config.zellij.data_dir;
     let interval = config.snapshot.interval_secs;
     let live_ascii_args = chobits::config::live_ascii_args(&config.live_ascii);
-    let wasm_path = find_wasm("chobits-zellij.wasm");
+    let chobits_bin = chobits::config::find_executable("chobits");
+    let wasm_path = chobits::config::find_wasm("chobits-zellij.wasm");
     let live_ascii_bin = chobits::config::find_executable("live-ascii");
     let chobits_bar_bin = chobits::config::find_executable("chobits-bar");
     let chobits_send_bin = chobits::config::find_executable("chobits-send");
-    let zellij_bin = chobits::config::find_executable("zellij");
 
-    // Use user layout from config.toml if present, else fall back to embedded default.
-    // Either way, substitute runtime templates (including bundled binary paths)
-    // before writing, so the layout never depends on `$PATH`.
     let template = chobits::config::load_layout_from_config(&config_path);
     let final_kdl = chobits::config::build_layout_kdl_from(
         &template,
+        &chobits_bin,
         &wasm_path,
         interval,
         &live_ascii_args,
         &live_ascii_bin,
         &chobits_bar_bin,
         &chobits_send_bin,
-        &zellij_bin,
+        &zellij.bin,
     );
 
-    // 4. Create Zellij directories and write layout.kdl
+    // 3. Create Zellij directories and write layout.kdl
     let zellij_layout_dir = zellij_config_dir.join("layouts");
     let zellij_plugin_dir = zellij_data_dir.join("plugins");
 
     for dir in [&zellij_config_dir, &zellij_data_dir, &zellij_layout_dir, &zellij_plugin_dir] {
-        if let Err(e) = std::fs::create_dir_all(dir) {
+        if let Err(e) = fs::create_dir_all(dir) {
             eprintln!("[start] Warning: could not create Zellij dir {:?}: {e}", dir);
         }
     }
 
     let layout_path = zellij_layout_dir.join("layout.kdl");
-    if let Some(parent) = layout_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
     if let Err(e) = fs::write(&layout_path, &final_kdl) {
         eprintln!("[start] Failed to write layout to {:?}: {}", layout_path, e);
     }
 
-    // 5. Pre-grant plugin permissions by writing to Zellij's cache file
+    // 4. Pre-grant plugin permissions
     if let Err(e) = chobits::zellij::grant_plugin_permission(&wasm_path, PLUGIN_PERMISSIONS) {
         eprintln!("[start] Failed to grant Zellij plugin permissions: {}", e);
     }
 
-    // 6. Launch zellij — prefer the bundled bin/local/zellij(.exe), fall back to $PATH
-    println!("[start] Launching zellij ({:?})...", zellij_bin);
-    let session_name = format!("chobits-{}", timestamp);
-    println!("[start] Session name: {session_name}");
-
-    let zellij_status = Command::new(&zellij_bin)
-        .args([
-            "--config-dir",
-            &zellij_config_dir.to_string_lossy(),
-            "--data-dir",
-            &zellij_data_dir.to_string_lossy(),
-            "--new-session-with-layout",
-            &layout_path.to_string_lossy(),
-            "--session",
-            &session_name,
-        ])
-        .spawn()
-        .and_then(|mut child| child.wait())
-        .map(|status| status.code());
-
-    match zellij_status {
-        Ok(Some(code)) if code != 0 => {
-            eprintln!("[start] Zellij exited with code {}", code);
+    // 5. Attach to existing session or create a new one
+    match zellij.list_sessions().as_slice() {
+        [] => {
+            let session_name = format!("chobits-{}", timestamp);
+            println!("[start] Creating new session: {session_name}");
+            match zellij.new_session(&session_name, &layout_path) {
+                Ok(s) if !s.success() => eprintln!("[start] Zellij exited with code {:?}", s.code()),
+                Err(e) => eprintln!("[start] Failed to launch zellij: {e}"),
+                _ => {}
+            }
+            println!("[start] Done.");
         }
-        Err(e) => {
-            eprintln!("[start] Failed to launch zellij: {}", e);
+        [session_name] => {
+            println!("[start] Attaching to existing session: {session_name}");
+            match zellij.attach(session_name) {
+                Ok(s) if !s.success() => eprintln!("[start] Zellij attach exited with code {:?}", s.code()),
+                Err(e) => eprintln!("[start] Failed to attach: {e}"),
+                _ => {}
+            }
         }
-        _ => {}
-    }
+        sessions => {
+            println!("[start] Multiple chobits sessions running:");
+            for (i, s) in sessions.iter().enumerate() {
+                println!("  [{}] {}", i + 1, s);
+            }
+            print!("[start] Select session to attach (1-{}): ", sessions.len());
+            std::io::Write::flush(&mut std::io::stdout()).ok();
 
-    // 7. Cleanup — kill the zellij session first, then the daemon.
-    // The session may already be gone (user exited normally), so ignore errors.
-    println!("[start] Zellij closed, cleaning up...");
-    let _ = Command::new(&zellij_bin)
-        .args([
-            "--config-dir", &zellij_config_dir.to_string_lossy(),
-            "--data-dir",   &zellij_data_dir.to_string_lossy(),
-            "delete-session", &session_name, "--force",
-        ])
-        .status();
-    let _ = daemon.kill();
-    println!("[start] Done.");
-}
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).ok();
 
-/// Locate `chobits-zellij.wasm`. Search order:
-/// 1. `<chobits-root>/local/bin/` — packaged layout
-/// 2. `<chobits-root>/bin/`       — fallback for unusual layouts
-/// 3. Walk up from the exe to find a Cargo workspace's
-///    `target/wasm32-wasip1/{debug,release}/` — useful for `cargo run`
-fn find_wasm(name: &str) -> PathBuf {
-    for dir in [chobits::config::local_bin_dir(), chobits::config::bin_dir()] {
-        let candidate = dir.join(name);
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(dir) = exe_path.parent() {
-            let mut ancestor = dir;
-            loop {
-                for profile in &["debug", "release"] {
-                    let candidate = ancestor
-                        .join("target")
-                        .join("wasm32-wasip1")
-                        .join(profile)
-                        .join(name);
-                    if candidate.exists() {
-                        return candidate;
-                    }
+            match input.trim().parse::<usize>().ok().filter(|&n| n >= 1 && n <= sessions.len()) {
+                Some(n) => {
+                    let session_name = &sessions[n - 1];
+                    println!("[start] Attaching to: {session_name}");
+                    let _ = zellij.attach(session_name);
                 }
-                match ancestor.parent() {
-                    Some(p) => ancestor = p,
-                    None => break,
+                None => {
+                    eprintln!("[start] Invalid selection, aborting.");
+                    std::process::exit(1);
                 }
             }
         }
     }
-    PathBuf::from(name)
 }

@@ -314,6 +314,9 @@ layout {
         plugin location="tab-bar"
     }
     pane split_direction="vertical" {
+        pane size=1 borderless=true command="{chobits_bin}" {
+            args "--quiet"
+        }
         pane focus=true
         pane split_direction="horizontal" size="30%" {
             pane command="{live_ascii_bin}" name="LIVE-ASCII" {
@@ -373,10 +376,38 @@ install/Chobits/bin/chobits-start
 chobits-start
 ```
 
+On first launch a new Zellij session is created. On subsequent runs,
+`chobits-start` detects the existing session and re-attaches automatically.
+If multiple sessions are running, you will be prompted to select one.
+
+To detach from the session without stopping it, press `Ctrl+o d` inside Zellij.
+Running `chobits-start` again will re-attach. To terminate the session entirely,
+press `Ctrl+q` or close all panes.
+
+### Subcommands
+
+Pass arguments directly to the bundled Zellij instance:
+
+```bash
+chobits-start zellij <args>
+
+# Examples
+chobits-start zellij ls                  # list sessions
+chobits-start zellij attach --session <name>
+chobits-start zellij --help
+```
+
+This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
+with the correct isolated paths — no need to know where they are.
 This spawns the daemon, waits for it to be ready, then opens Zellij with the generated layout.
 
-> [!NOTE]
-> Once `chobits-start` exits, the corresponding Zellij session will be killed.
+> [!WARNING]
+> Even when detached, if the content of your terminal keeps changing, Chobits
+> continues sending snapshots to the LLM, which costs tokens.
+>
+> Snapshots are only sent when the screen content changes, so a still terminal costs nothing.
+> To stop token consumption entirely, terminate the session with `Ctrl+q`
+> rather than detaching.
 
 ## Architecture
 
