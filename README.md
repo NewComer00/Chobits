@@ -31,9 +31,9 @@ Download and extract the archive for your platform:
 
 ```bash
 # Linux
-tar -xzf Chobits-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf Chobits-x86_64-unknown-linux-musl.tar.gz
 
-# Windows (MSYS2)
+# Windows
 unzip Chobits-x86_64-pc-windows-gnu.zip
 ```
 
@@ -224,7 +224,7 @@ The LLM backend that powers Chi's reactions — plug in any Ollama or OpenAI-com
 | `backend`    | `"ollama"`                 | `"ollama"` or anything else = OpenAI-compatible |
 | `url`        | `"http://localhost:11434"` | API base URL                                    |
 | `model`      | `"qwen3:0.6b"`             | Model name                                      |
-| `max_tokens` | `256`                      | Max tokens per response                         |
+| `max_tokens` | `512`                      | Max tokens per response                         |
 | `api_key`    | (empty)                    | API key for OpenAI-compatible backends          |
 
 Example for ollama:
@@ -267,6 +267,9 @@ You genuinely care about what the user is working on.
 """
 ```
 
+<details>
+<summary>Click to expand more config items</summary>
+
 ### `[snapshot]` — Terminal Polling
 
 Controls how the Zellij plugin captures the currently focused pane (in text) and how often it polls. The snapshot taken will be sent to LLM backend when it's not busy.
@@ -275,27 +278,31 @@ If no change happens to the focused Zellij pane, no message will be sent to save
 
 |       Key       | Default |              Description              |
 | --------------- | ------- | ------------------------------------- |
+| `port`          | `7878`  | TCP — daemon receives snapshots       |
 | `max_bytes`     | `4096`  | Truncate snapshots (head + tail)      |
 | `interval_secs` | `10`    | Plugin `dump-screen` polling interval |
 
 ```toml
 [snapshot]
+port          = 7878
 max_bytes     = 4096
 interval_secs = 10
 ```
 
-<details>
-<summary>Click to expand more config items</summary>
+### `[bar]` — Text Reaction Bar
 
-### `[ports]` — TCP/UDP Ports
+Controls the chobits-bar scrollback pane.
 
-Ports for inter-process communication between the daemon, bar, and renderer.
+|        Key         | Default |                Description                 |
+| ------------------ | ------- | ------------------------------------------ |
+| `port`             | `7879`  | TCP — daemon sends text reactions          |
+| `history_length`   | `50`    | Max text reactions kept in scrollback      |
 
-|    Key     | Default |               Description                |
-| ---------- | ------- | ---------------------------------------- |
-| `snapshot` | `7878`  | TCP — daemon receives terminal snapshots |
-| `bar`      | `7879`  | TCP — daemon sends text reactions        |
-| `osf`      | `11573` | UDP — daemon sends OSF expression frames |
+```toml
+[bar]
+port           = 7879
+history_length = 50
+```
 
 ### `[live-ascii]` — Live2D ASCII Renderer
 
@@ -395,6 +402,12 @@ idle_timeout_secs = 30
 
 ## Run
 
+> [!NOTE]
+> Chobits needs a running LLM backend before launch:
+>
+> - **Ollama** (default): install [Ollama](https://ollama.com), then pull the model named in `[llm] model` (e.g. `ollama pull qwen3:0.6b`).
+> - **OpenAI-compatible API**: set `[llm] backend`, `url`, `model`, and `api_key` in `config.toml` to your provider.
+
 One-command launch:
 
 ```bash
@@ -428,65 +441,75 @@ chobits-start zellij --help
 This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
 with the correct isolated paths — no need to know where they are.
 
-> [!WARNING]
-> Even when detached, if the content of your terminal keeps changing, Chobits
-> continues sending snapshots to the LLM, which costs tokens.
->
-> Snapshots are only sent when the screen content changes, so a still terminal costs nothing.
-> To stop token consumption entirely, terminate the session with `Ctrl+q`
-> rather than detaching.
+> [!NOTE]
+> Detaching (`Ctrl+o d`) pauses terminal snapshot polling — no LLM calls from
+> screen changes while no client is attached. Run `chobits-start` again to
+> re-attach and resume. Terminate the session with `Ctrl+q` to stop Chobits entirely.
 
 ## Architecture
 
+`chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Port numbers below are **defaults** — configure them in `[snapshot] port`, `[bar] port`, and `[expressions] osf_port`.
+
+**Data flow** (while a client is attached):
+
 ```
-chobits-zellij  ──run_command──▶  chobits-send  ──TCP:7878──▶  chobits  ──TCP:7879──▶  chobits-bar
-                                                                    │
-                                                                ollama REST
-                                                                    │
-                                                                UDP:11573 ──▶ live-ascii
+chobits-start ──▶ zellij session (layout from config.toml)
+                      │
+chobits-zellij ──run_command──▶ zellij dump-screen ──▶ plugin (screen text)
+                      │
+                      └──run_command──▶ chobits-send ──TCP:7878──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
+                                                                              ├── HTTP REST ──▶ LLM backend
+                                                                              └── UDP:11573 ──▶ live-ascii
 ```
+
+When no client is attached (detached), the plugin skips `dump-screen` polling and ignores in-flight snapshot results.
+
+**Layout** (inside Zellij):
 
 ```
 ┌─ zellij ────────────────────────────────────────────────────────────┐
-│  ┌─────────────────────────────┐   ┌─────────────┐  ┌────────────┐  │
-│  │  main terminal              │   │  live-ascii │  │ chobits-   │  │
-│  │                             │   │             │  │ bar        │  │
-│  │  [chobits-zellij plugin]    │   │             │  │            │  │
-│  └────────────┬────────────────┘   └──────▲──────┘  └─────▲──────┘  │
-└───────────────│────────────────────────── │ ──────────────│─────────┘
-                │ run_command               │ OSF UDP       │ text
-                ▼                           │ :11573        │ TCP:7879
-          chobits-send                      │               │
-                │ TCP:7878                  │               │
-                ▼                           │               │
-        ┌───────────────────────────────────────────────┐   │
-        │  chobits (daemon)                             │───┘
-        │                                               │
-        │  snapshot → LLM → { text, expression }        │
-        └───────────────────┬───────────────────────────┘
-                            │
-                      ┌─────▼──────┐
-                      │ LLM backend│
-                      │ (ollama)   │
-                      └────────────┘
+│  ┌─────────────────────────────┐    ┌─────────────┐  ┌────────────┐ │
+│  │  main terminal              │    │  live-ascii │  │ chobits-   │ │
+│  │  [chobits-zellij plugin]    │    │             │  │ bar        │ │
+│  └──────────────┬──────────────┘    └──────▲──────┘  └─────▲──────┘ │
+└─────────────────┼──────────────────────────┼───────────────┼────────┘
+                  │ dump-screen + send       │ OSF UDP       │ text
+                  ▼                          │ :11573        │ :7879
+            chobits-send                     │               │
+                  │ TCP :7878                │               │
+                  ▼                          │               │
+        ┌─────────────────────────────────────────────┐      │
+        │  chobits (daemon)                           │──────┘
+        │  snapshot → LLM → { text, expression }      │
+        └────────────────────┬────────────────────────┘
+                             │
+                       ┌─────▼──────┐
+                       │ LLM backend│
+                       │ (Ollama or │
+                       │  compatible│
+                       │  API)      │
+                       └────────────┘
 ```
 
 ### Communication Contracts
 
-| Link                          | Protocol                            | Direction |
-|-------------------------------|-------------------------------------|-----------|
-| chobits-zellij → chobits-send | `run_command` (subprocess)          | one-way   |
-| chobits-send → chobits        | TCP `:7878`, plain text             | one-way   |
-| chobits → LLM                 | HTTP REST (ollama)                  | req/reply |
-| chobits → chobits-bar         | TCP `:7879`, newline-delimited text | one-way   |
-| chobits → live-ascii          | UDP `:11573`, OSF frames            | one-way   |
+| Link                          | Protocol                                      | Direction |
+| ----------------------------- | --------------------------------------------- | --------- |
+| chobits-zellij → zellij       | `run_command` — `dump-screen`                 | one-way   |
+| chobits-zellij → chobits-send | `run_command` (subprocess)                    | one-way   |
+| chobits-send → chobits        | TCP `:7878` (default), JSON snapshot payload  | one-way   |
+| chobits → LLM                 | HTTP REST (Ollama or OpenAI-compatible)       | req/reply |
+| chobits → chobits-bar         | TCP `:7879` (default), newline-delimited text | one-way   |
+| chobits → live-ascii          | UDP `:11573` (default), OSF frames            | one-way   |
 
 ## Tools
 
 | Tool                                | Description                              |
-|-------------------------------------|------------------------------------------|
+| ----------------------------------- | ---------------------------------------- |
 | `tool/openseeface_record_packet.py` | Capture raw OSF UDP frames to `.osf.bin` |
 | `tool/openseeface_play_packet.py`   | Playback `.osf.bin` over UDP for testing |
+
+Both tools use UDP port `11573` by default (same as `[expressions] osf_port`).
 
 Record from a live OpenSeeFace session:
 
@@ -502,7 +525,7 @@ python tool/openseeface_play_packet.py neutral.osf.bin --loop
 
 ## Related Projects
 
-- [NewComer00/live-ascii](https://github.com/NewComer00/live-ascii) (forked from [Arcelyth/live-ascii](Arcelyth/live-ascii), Copyright (c) 2026 Arcelyth, MIT License)
+- [NewComer00/live-ascii](https://github.com/NewComer00/live-ascii) (forked from [Arcelyth/live-ascii](https://github.com/Arcelyth/live-ascii), Copyright (c) 2026 Arcelyth, MIT License)
 
 ## License
 

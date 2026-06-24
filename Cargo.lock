@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "chobits"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "gag",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "chobits-bar"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chobits",
  "crossterm",
@@ -220,18 +220,18 @@ dependencies = [
 
 [[package]]
 name = "chobits-meta"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chobits-send"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chobits",
 ]
 
 [[package]]
 name = "chobits-start"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chobits",
  "chobits-meta",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "chobits-zellij"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chobits-meta",
  "serde",

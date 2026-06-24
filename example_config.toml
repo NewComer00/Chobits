@@ -7,10 +7,9 @@
 # ║  Edit, save, restart  —  chobits-start picks up changes on next launch.   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-[ports]
-snapshot = 7878                                # TCP — daemon receives snapshots here
-bar      = 7879                                # TCP — daemon sends text reactions here
-osf      = 11573                               # UDP — daemon sends OSF frames here
+[bar]
+port           = 7879                           # TCP — daemon sends text reactions here
+history_length = 50                            # max text reactions kept in scrollback
 
 [llm]
 backend    = "ollama"                          # "ollama" | anything else = openai-compatible
@@ -20,7 +19,8 @@ max_tokens = 512                               # max tokens per response
 # api_key  = "sk-..."                          # only needed for OpenAI-compatible backends
 
 [snapshot]
-max_bytes = 4096                               # truncate large terminal snapshots (head + tail)
+port          = 7878                           # TCP — daemon receives snapshots here
+max_bytes     = 4096                           # truncate large terminal snapshots (head + tail)
 interval_secs = 10                             # plugin dump-screen polling interval
 
 [persona]

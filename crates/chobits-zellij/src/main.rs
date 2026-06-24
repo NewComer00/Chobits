@@ -78,7 +78,9 @@ impl ZellijPlugin for State {
                 false
             }
             Event::RunCommandResult(_exit_code, stdout, _stderr, context) => {
-                if context.get("type").map(|s| s.as_str()) == Some("screen") {
+                if !self.detached
+                    && context.get("type").map(|s| s.as_str()) == Some("screen")
+                {
                     let raw = String::from_utf8_lossy(&stdout).to_string();
                     let content = strip_ansi_escapes::strip_str(&raw).trim().to_string();
                     if !content.is_empty() {

@@ -60,7 +60,6 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub ports: Ports,
     pub llm: LlmConfig,
     pub persona: PersonaConfig,
     #[allow(dead_code)]
@@ -71,6 +70,18 @@ pub struct Config {
     #[allow(dead_code)]
     #[serde(rename = "live-ascii")]  // TOML [live-ascii] → Rust live_ascii
     pub live_ascii: LiveAsciiConfig,
+    #[serde(default)]
+    pub bar: BarConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BarConfig {
+    /// TCP port chobits-bar listens on for text reactions.
+    #[serde(default = "default_bar_port")]
+    pub port: u16,
+    /// Max number of text reactions kept in the chobits-bar scrollback.
+    #[serde(default = "default_history_length")]
+    pub history_length: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -87,10 +98,17 @@ pub struct ZellijConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Ports {
-    pub snapshot: u16,
-    pub bar: u16,
-    pub osf: u16,
+pub struct SnapshotConfig {
+    /// TCP port the daemon listens on for terminal snapshots.
+    #[serde(default = "default_snapshot_port")]
+    pub port: u16,
+    /// Truncate incoming snapshot text to this many bytes (head + tail kept).
+    #[serde(default = "default_max_snapshot_bytes")]
+    pub max_bytes: usize,
+    // Dump-screen polling interval
+    #[serde(default = "default_interval_secs")]
+    #[allow(dead_code)]
+    pub interval_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,17 +123,6 @@ pub struct LlmConfig {
     pub max_tokens: u32,
     #[serde(default)]
     pub api_key: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SnapshotConfig {
-    /// Truncate incoming snapshot text to this many bytes (head + tail kept).
-    #[serde(default = "default_max_snapshot_bytes")]
-    pub max_bytes: usize,
-    // Dump-screen polling interval
-    #[serde(default = "default_interval_secs")]
-    #[allow(dead_code)]
-    pub interval_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,6 +168,25 @@ pub struct ExpressionsConfig {
     pub dir: PathBuf,
     #[serde(default = "default_idle_timeout")]
     pub idle_timeout_secs: u64,
+    /// UDP port live-ascii listens on for OSF expression frames.
+    #[serde(default = "default_osf_port")]
+    pub osf_port: u16,
+}
+
+fn default_history_length() -> usize {
+    50
+}
+
+fn default_snapshot_port() -> u16 {
+    7878
+}
+
+fn default_bar_port() -> u16 {
+    7879
+}
+
+fn default_osf_port() -> u16 {
+    11573
 }
 
 fn default_backend() -> String {
@@ -527,6 +553,15 @@ pub fn resolve_config_path(path: &Path) -> PathBuf {
     chobits_dir().join(path)
 }
 
+impl Default for BarConfig {
+    fn default() -> Self {
+        Self {
+            port: default_bar_port(),
+            history_length: default_history_length(),
+        }
+    }
+}
+
 impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = config_path();
@@ -546,11 +581,6 @@ impl Config {
 
     pub fn default_config() -> Self {
         Config {
-            ports: Ports {
-                snapshot: 7878,
-                bar: 7879,
-                osf: 11573,
-            },
             llm: LlmConfig {
                 backend: default_backend(),
                 url: default_url(),
@@ -559,6 +589,7 @@ impl Config {
                 api_key: String::new(),
             },
             snapshot: SnapshotConfig {
+                port: default_snapshot_port(),
                 max_bytes: default_max_snapshot_bytes(),
                 interval_secs: default_interval_secs(),
             },
@@ -569,6 +600,7 @@ impl Config {
             expressions: ExpressionsConfig {
                 dir: default_expressions_dir(),
                 idle_timeout_secs: default_idle_timeout(),
+                osf_port: default_osf_port(),
             },
             zellij: ZellijConfig {
                 config_dir: default_zellij_config_dir(),
@@ -585,6 +617,10 @@ impl Config {
                 scale: default_scale(),
                 offset_x: default_offset_x(),
                 offset_y: default_offset_y(),
+            },
+            bar: BarConfig {
+                port: default_bar_port(),
+                history_length: default_history_length(),
             },
         }
     }

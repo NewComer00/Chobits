@@ -4,7 +4,7 @@ use std::net::TcpStream;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut port: u16 = chobits::Config::load()
-        .map(|c| c.ports.snapshot)
+        .map(|c| c.snapshot.port)
         .unwrap_or(7878);
     let mut text: Option<String> = None;
 

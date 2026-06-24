@@ -49,9 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::load()?;
     if !quiet {
-        println!("  snapshot port: {}", config.ports.snapshot);
-        println!("  bar port:      {}", config.ports.bar);
-        println!("  osf port:      {}", config.ports.osf);
+        println!("  snapshot port: {}", config.snapshot.port);
+        println!("  bar port:      {}", config.bar.port);
+        println!("  osf port:      {}", config.expressions.osf_port);
         println!("  llm backend:   {} ({})", config.llm.backend, config.llm.model);
     }
 
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _gag_stderr = if quiet { Some(gag::Gag::stderr()?) } else { None::<gag::Gag> };
 
     let osf_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await?);
-    osf_socket.connect(format!("127.0.0.1:{}", config.ports.osf)).await?;
+    osf_socket.connect(format!("127.0.0.1:{}", config.expressions.osf_port)).await?;
 
     let osf_player = OsfPlayer::new(config.expressions.dir.clone(), "neutral", osf_socket)?;
 
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
     let listener_tx = tx.clone();
-    let snapshot_port = config.ports.snapshot;
+    let snapshot_port = config.snapshot.port;
     tokio::spawn(async move {
         if let Err(e) = snapshot::listen(snapshot_port, config.snapshot.max_bytes, move |text| {
             let _ = listener_tx.send(text);
@@ -204,7 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             *state.llm_busy.lock().await = false;
 
             let bar_text = parsed.text.clone();
-            let bar_port = config.ports.bar;
+            let bar_port = config.bar.port;
             tokio::spawn(async move {
                 if let Err(e) = bar::send_text(bar_port, &bar_text).await {
                     eprintln!("[chobits] Failed to send to bar: {}", e);

@@ -75,12 +75,14 @@ jobs:
       - name: Build
         run: ./build.sh --locked -y
 
-      - name: Get target triple and archive
+      - name: Get target triple
         run: |
           TARGET=$(rustc -vV | grep host | awk '{print $2}')
           echo "TARGET=$TARGET" >> $GITHUB_ENV
-          cd install
-          powershell Compress-Archive -Path Chobits -DestinationPath ../Chobits-${TARGET}.zip
+
+      - name: Archive
+        shell: pwsh
+        run: Compress-Archive -Path install/Chobits -DestinationPath "Chobits-$env:TARGET.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,18 +95,21 @@ jobs:
     container:
       image: alpine:latest
     steps:
-      - name: Install system dependencies
+      - name: Install checkout dependencies
+        run: apk add --no-cache git git-lfs
+
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install build dependencies
         run: |
-          apk add --no-cache rustup bash jq wget unzip make gcc musl-dev git git-lfs
+          apk add --no-cache rustup bash jq wget unzip make gcc musl-dev
 
       - name: Install Rust toolchain
         run: |
           rustup-init -y --default-toolchain stable
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Install Rust targets
         shell: bash
@@ -139,6 +144,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+
+      - name: Verify release artifacts
+        run: |
+          ls -la Chobits-*
+          count=$(ls -1 Chobits-* | wc -l)
+          test "$count" -eq 3
+          test $(ls -1 Chobits-*.tar.gz | wc -l) -eq 2
+          test $(ls -1 Chobits-*.zip | wc -l) -eq 1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
