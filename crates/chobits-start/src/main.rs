@@ -107,7 +107,6 @@ fn main() {
                 Err(e) => eprintln!("[start] Failed to launch zellij: {e}"),
                 _ => {}
             }
-            println!("[start] Done.");
         }
         [session_name] => {
             println!("[start] Attaching to existing session: {session_name}");

@@ -94,7 +94,7 @@ echo "  cargo-binstall  - For easier installation of Zellij. Install it with: \`
 echo "  jq              - JSON processor"
 echo "  wget            - HTTP downloader"
 echo "  unzip           - ZIP extractor"
-echo "  make, gcc       - GNU Make and C toolchain (for live-ascii)"
+echo "  make, cc        - GNU Make and C toolchain (for live-ascii)"
 echo ""
 echo "Install destination: $DEST"
 if [[ $YES -eq 0 ]]; then
@@ -126,28 +126,28 @@ fi
 
 # chobits starter → bin/
 need "$BIN" "chobits-start" "chobits-start" "$force_chobits" \
-    cargo install $LOCK_FLAG --path "crates/chobits-start" --root "$DEST"
+    cargo install $LOCK_FLAG --force --path "crates/chobits-start" --root "$DEST"
 
 # chobits sibling binaries → local/bin/
 for c in "" "-send" "-bar"; do
     need "$LOCAL_BIN" "chobits${c}" "chobits${c}" "$force_chobits" \
-        cargo install $LOCK_FLAG --path "crates/chobits${c}" --root "$DEST/local"
+        cargo install $LOCK_FLAG --force --path "crates/chobits${c}" --root "$DEST/local"
 done
 
 # chobits-zellij plugin → local/bin/
 need "$LOCAL_BIN" "chobits-zellij.wasm" "chobits-zellij" "$force_chobits" \
-    cargo install $LOCK_FLAG --path crates/chobits-zellij --root "$DEST/local" --target wasm32-wasip1
+    cargo install $LOCK_FLAG --force --path crates/chobits-zellij --root "$DEST/local" --target wasm32-wasip1
 
 # live-ascii → local/bin/
 need "$LOCAL_BIN" "live-ascii" "live-ascii" "$force_live_ascii" \
-    cargo install $LOCK_FLAG --git https://github.com/NewComer00/live-ascii --root "$DEST/local"
+    cargo install $LOCK_FLAG --force --git https://github.com/NewComer00/live-ascii --root "$DEST/local"
 
 # zellij (version pinned to match zellij-tile in Cargo.lock) → local/bin/
 ZELLIJ_VER=$(cargo metadata --format-version 1 | jq -r '
     .packages[] | select(.name == "zellij-tile") | .version')
 if [[ "${MSYSTEM:-}" =~ ^(UCRT64|MINGW64)$ ]]; then
     need "$LOCAL_BIN" "zellij" "zellij $ZELLIJ_VER" "$force_zellij" \
-        cargo binstall zellij --version "$ZELLIJ_VER" --root "$DEST/local" -y \
+        cargo binstall --force zellij --version "$ZELLIJ_VER" --root "$DEST/local" -y \
             $LOCK_FLAG \
             --target x86_64-pc-windows-msvc \
             --pkg-url "https://github.com/zellij-org/zellij/releases/download/v{ version }/{ name }-x86_64-pc-windows-msvc.zip" \
@@ -156,7 +156,7 @@ if [[ "${MSYSTEM:-}" =~ ^(UCRT64|MINGW64)$ ]]; then
             --disable-strategies compile
 else
     need "$LOCAL_BIN" "zellij" "zellij $ZELLIJ_VER" "$force_zellij" \
-        cargo binstall zellij --version "$ZELLIJ_VER" --root "$DEST/local" -y $LOCK_FLAG
+        cargo binstall --force zellij --version "$ZELLIJ_VER" --root "$DEST/local" -y $LOCK_FLAG
 fi
 
 # Live2D sample model (hiyori)

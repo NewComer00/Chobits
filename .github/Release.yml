@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq wget unzip make gcc
+
+      - name: Install Rust targets
+        run: rustup target add wasm32-wasip1
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Build
+        run: ./build.sh --locked -y
+
+      - name: Get target triple and archive
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          cd install
+          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.tar.gz
+
+  build-windows:
+    name: Build (Windows / MSYS2 UCRT64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-git
+            mingw-w64-ucrt-x86_64-git-lfs
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-rust-wasm
+            mingw-w64-ucrt-x86_64-jq
+            mingw-w64-ucrt-x86_64-wget
+            mingw-w64-ucrt-x86_64-gcc
+            unzip
+            make
+
+      - name: Install cargo-binstall
+        run: cargo install cargo-binstall
+
+      - name: Build
+        run: ./build.sh --locked -y
+
+      - name: Get target triple and archive
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          cd install
+          powershell Compress-Archive -Path Chobits -DestinationPath ../Chobits-${TARGET}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.zip
+
+  build-alpine:
+    name: Build (Alpine Linux)
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install system dependencies
+        run: |
+          apk add --no-cache rustup bash jq wget unzip make gcc musl-dev git git-lfs
+
+      - name: Install Rust toolchain
+        run: |
+          rustup-init -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Rust targets
+        shell: bash
+        run: rustup target add wasm32-wasip1
+
+      - name: Install cargo-binstall
+        shell: bash
+        run: cargo install cargo-binstall
+
+      - name: Build
+        shell: bash
+        run: ./build.sh --locked -y
+
+      - name: Get target triple and archive
+        shell: bash
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          cd install
+          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.tar.gz
+
+  release:
+    name: Create Release
+    needs: [build-linux, build-windows, build-alpine]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Chobits-*
+          generate_release_notes: true

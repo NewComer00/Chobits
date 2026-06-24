@@ -4,14 +4,42 @@ A cross-platform live2D terminal companion living inside Zellij driven by LLM.
 
 <img width="1917" height="967" alt="image" src="https://github.com/user-attachments/assets/254a2289-e404-48a2-b47b-63852bd28a78" />
 
-## Build From Source
 
-### Supported Platforms
+## Supported Platforms
 
 - Linux
 - Windows*
 
 > \* You need to build this project inside 'MSYS2 UCRT64' or 'MSYS2 MINGW64' environment. After building, you can deploy and run the binaries on native Windows without MSYS2 dependencies.
+
+## Download from Release
+
+> [!NOTE]
+> The release package includes a free model ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) downloaded from [Cubism](https://www.live2d.com/en/learn/sample/).
+> 
+> Before using this model, please review the ["Free Material License Agreement"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) and the ["Live2D Cubism Sample Data Terms of Use"](https://www.live2d.com/learn/sample/model-terms/).
+
+Pre-built binaries are available on the [Releases](https://github.com/NewComer00/Chobits/releases) page for the following platforms:
+
+|                  Package                   |    Platform    |                      Notes                      |
+| ------------------------------------------ | -------------- | ----------------------------------------------- |
+| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux   | Standard glibc-linked build                     |
+| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux   | Lightweight, static-linked musl build           |
+| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows | Built with MSYS2 UCRT64; runs on native Windows |
+
+Download and extract the archive for your platform:
+
+```bash
+# Linux
+tar -xzf Chobits-x86_64-unknown-linux-gnu.tar.gz
+
+# Windows (MSYS2)
+unzip Chobits-x86_64-pc-windows-gnu.zip
+```
+
+You will get a `Chobits/` folder — this is the **Chobits root**. Move it wherever you like. To get the directory structure and following instructions, proceed to [Deployment](#deployment).
+
+## Build from Source
 
 ### Prerequisites
 
@@ -25,7 +53,7 @@ A cross-platform live2D terminal companion living inside Zellij driven by LLM.
 | wget           | HTTP downloader.                                                                      |
 | unzip          | ZIP extractor.                                                                        |
 | make           | GNU Make (for live-ascii).                                                            |
-| gcc            | GNU C toolchain (for live-ascii).                                                     |
+| cc             | C toolchain (for live-ascii).                                                         |
 
 For MSYS2 UCRT64/MINGW64 users, you can install these tools with:
 
@@ -75,7 +103,7 @@ All three binaries (`chobits`, `chobits-send`, `chobits-bar`) and the WASM plugi
 
 Then Install dependencies (e.g. `live-ascii` and `zellij`) according to their instructions. For convenience, just install them into the same `install/Chobits/local/bin/` directory to keep everything self-contained.
 
-Install `live-ascii` from source, GNU Make (`make`) and C toolchain (`gcc`) required:
+Install `live-ascii` from source, GNU Make (`make`) and C toolchain (`cc`) required:
 
 ```bash
 cargo install --git https://github.com/NewComer00/live-ascii --root install/Chobits/local
@@ -112,7 +140,7 @@ cp -r expressions install/Chobits/
 
 Download the Live2D model of your choice and place the `.model3.json` file somewhere accessible.  Note the path for the next step.
 
-For example, you can download the free "Hiyori" model from Cubism, and place the extracted `hiyori_free/` directory in `install/Chobits/models/`:
+For example, you can download the free ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) model from [Cubism](https://www.live2d.com/en/learn/sample/), and place the extracted `hiyori_free/` directory in `install/Chobits/models/`:
 
 ```bash
 mkdir -p install/Chobits/models
@@ -185,7 +213,7 @@ Chobits/
 
 ## Configuration
 
-All configuration lives in `config.toml` at the Chobits root. Paths may be absolute or relative to the config file's own directory.
+All configuration lives in `config.toml` at the Chobits root. File paths in this config may be absolute or relative to the config file's own directory.
 
 ### `[llm]` — Language Model
 
@@ -399,7 +427,6 @@ chobits-start zellij --help
 
 This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
 with the correct isolated paths — no need to know where they are.
-This spawns the daemon, waits for it to be ready, then opens Zellij with the generated layout.
 
 > [!WARNING]
 > Even when detached, if the content of your terminal keeps changing, Chobits
