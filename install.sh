@@ -188,8 +188,10 @@ info "installing to ${INSTALL_DIR}"
 install_parent=$(dirname "$INSTALL_DIR")
 mkdir -p "$install_parent"
 rm -rf "$INSTALL_DIR"
-tar -xzf "${tmp}/${archive}" -C "$install_parent"
-root="${install_parent}/Chobits"
+extract_dir="${tmp}/extract"
+mkdir -p "$extract_dir"
+tar -xzf "${tmp}/${archive}" -C "$extract_dir"
+root="${extract_dir}/Chobits"
 if [ ! -d "$root" ]; then
     err "archive did not contain a Chobits/ folder"
 fi
