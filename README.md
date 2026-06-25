@@ -1,6 +1,6 @@
 # Chobits
 
-A cross-platform live2D terminal companion living inside Zellij driven by LLM.
+A cross-platform Live2D terminal companion living inside Zellij driven by LLM.
 
 <img width="1917" height="967" alt="image" src="https://github.com/user-attachments/assets/254a2289-e404-48a2-b47b-63852bd28a78" />
 
@@ -35,7 +35,7 @@ irm https://raw.githubusercontent.com/NewComer00/Chobits/main/install.ps1 | iex
 
 Edit `config.toml` before your first run — by default at `~/.local/share/Chobits/config.toml` (Linux) or `%LOCALAPPDATA%\Chobits\config.toml` (Windows).
 
-Find the `[llm]` section in the config. Chobits supports following types of LLM backends:
+Find the `[llm]` section in the config. Chobits supports the following LLM backends
 
 **Ollama**
 
@@ -173,7 +173,7 @@ cd Chobits
 <details>
 <summary>Click to expand manual build instructions</summary>
 
-Create the local directory `install/Chobits/` to hold all binaries, configurations, live2D models and expressions:
+Create the local directory `install/Chobits/` to hold all binaries, configurations, Live2D models and expressions:
 
 ```bash
 mkdir -p install/Chobits
@@ -198,7 +198,7 @@ cargo install --path crates/chobits-zellij --root install/Chobits/local --target
 
 All three binaries (`chobits`, `chobits-send`, `chobits-bar`) and the WASM plugin (`chobits-zellij.wasm`) should now be in `install/Chobits/local/bin/`.
 
-Then Install dependencies (e.g. `live-ascii` and `zellij`) according to their instructions. For convenience, just install them into the same `install/Chobits/local/bin/` directory to keep everything self-contained.
+Then install dependencies (e.g. `live-ascii` and `zellij`) according to their instructions. For convenience, just install them into the same `install/Chobits/local/bin/` directory to keep everything self-contained.
 
 Install `live-ascii` from source, GNU Make (`make`) and C toolchain (`cc`) required:
 
@@ -315,7 +315,7 @@ The LLM backend that powers Chi's reactions — plug in any Ollama or OpenAI-com
 | `max_tokens` | `512`                      | Max tokens per response                         |
 | `api_key`    | (empty)                    | API key for OpenAI-compatible backends          |
 
-Example for ollama:
+Example for Ollama:
 
 ```toml
 [llm]
