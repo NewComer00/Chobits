@@ -26,7 +26,13 @@ jobs:
         run: rustup target add wasm32-wasip1
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.tgz \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
+          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build
         run: ./build.sh --locked -y
@@ -70,7 +76,13 @@ jobs:
             make
 
       - name: Install cargo-binstall
-        run: cargo install cargo-binstall
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.zip \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip
+          unzip -o /tmp/cargo-binstall.zip -d /tmp/cargo-binstall
+          install -m 755 /tmp/cargo-binstall/cargo-binstall.exe "$HOME/.cargo/bin/cargo-binstall.exe"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build
         run: ./build.sh --locked -y
@@ -117,7 +129,13 @@ jobs:
 
       - name: Install cargo-binstall
         shell: bash
-        run: cargo install cargo-binstall
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.tgz \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
+          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build
         shell: bash
