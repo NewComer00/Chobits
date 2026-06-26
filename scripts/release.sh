@@ -41,15 +41,6 @@ for arg in "$@"; do
     esac
 done
 
-# Helper: print a command in dry-run mode instead of running it
-run() {
-    if [[ "$DRY_RUN" == true ]]; then
-        echo "  [dry-run] $*"
-    else
-        "$@"
-    fi
-}
-
 # ---------------------------------------------------------------------------
 # 1. Determine current version from workspace Cargo.toml
 # ---------------------------------------------------------------------------
@@ -83,18 +74,35 @@ fi
 
 # ---------------------------------------------------------------------------
 # 3. Determine bump type from conventional commits
-#    breaking change / feat! / BREAKING CHANGE → major
-#    feat:                                      → minor
-#    fix: / chore: / docs: / refactor: / etc.  → patch
+#    v0.x (pre-1.0):
+#      breaking change / feat! / BREAKING CHANGE → minor  (major stays 0)
+#      feat:                                      → minor
+#      fix: / perf: / revert:                    → patch
+#      chore: / docs: / style: / ci: / test:      → no bump
+#    v1.x+:
+#      breaking change / feat! / BREAKING CHANGE → major
+#      feat:                                      → minor
+#      fix: / perf: / revert:                    → patch
+#      chore: / docs: / style: / ci: / test:      → no bump
 # ---------------------------------------------------------------------------
 detect_bump() {
-    local bump="patch"
+    local bump="none"
+    local pre_release=false
+    [[ "$MAJOR" -eq 0 ]] && pre_release=true
+
     while IFS= read -r msg; do
         if echo "$msg" | grep -qiE '(BREAKING CHANGE|^feat!|^fix!|^refactor!)'; then
-            echo "major"; return
+            if [[ "$pre_release" == true ]]; then
+                echo "minor"; return
+            else
+                echo "major"; return
+            fi
         elif echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
             bump="minor"
+        elif echo "$msg" | grep -qiE '^(fix|perf|revert)(\(.+\))?:'; then
+            [[ "$bump" == "none" ]] && bump="patch"
         fi
+        # chore/docs/style/ci/test/build → no bump
     done <<< "$COMMITS"
     echo "$bump"
 }
@@ -103,6 +111,12 @@ if [[ -n "$FORCE_BUMP" ]]; then
     BUMP="$FORCE_BUMP"
 else
     BUMP=$(detect_bump)
+fi
+
+if [[ "$BUMP" == "none" ]]; then
+    echo "No releasable commits since ${LAST_TAG:-<none>} (only chore/docs/style/ci/test)."
+    echo "Use './release.sh patch' to force a release anyway."
+    exit 0
 fi
 
 # ---------------------------------------------------------------------------
@@ -139,7 +153,7 @@ generate_changelog_entry() {
             breaking+="- $msg"$'\n'
         elif echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
             feats+="- $msg"$'\n'
-        elif echo "$msg" | grep -qiE '^fix(\(.+\))?:'; then
+        elif echo "$msg" | grep -qiE '^(fix|perf|revert)(\(.+\))?:'; then
             fixes+="- $msg"$'\n'
         elif echo "$msg" | grep -qiE '^(chore|docs|style|refactor|perf|test|build|ci)(\(.+\))?:'; then
             chores+="- $msg"$'\n'
@@ -194,7 +208,10 @@ fi
 # ---------------------------------------------------------------------------
 echo "Bumping versions $CURRENT → $NEW..."
 for f in "${TOMLS[@]}"; do
-    sed -i "s/version = \"${CURRENT}\"/version = \"${NEW}\"/g" "$f"
+    # Bump workspace version declaration
+    sed -i "s/^version = \"${CURRENT}\"/version = \"${NEW}\"/" "$f"
+    # Bump intra-workspace path dependency versions only (not external deps)
+    sed -i "s/path = \"\([^\"]*\)\", version = \"${CURRENT}\"/path = \"\1\", version = \"${NEW}\"/g" "$f"
     echo "  updated $f"
 done
 
@@ -210,13 +227,19 @@ cargo check
 echo "Updating ${CHANGELOG}..."
 if [[ -f "$CHANGELOG" ]]; then
     TMPFILE=$(mktemp)
-    # Find the first blank line after the header block, insert entry there
-    HEADER_END=$(grep -n "^$" "$CHANGELOG" | head -1 | cut -d: -f1)
-    if [[ -z "$HEADER_END" ]]; then
-        HEADER_END=1
-    fi
+    # Find the last blank line before the first ## section — insert there.
+    HEADER_END=0
+    LINENO=0
+    while IFS= read -r line; do
+        LINENO=$((LINENO + 1))
+        if [[ "$line" =~ ^## ]]; then
+            break
+        fi
+        [[ -z "$line" ]] && HEADER_END=$LINENO
+    done < "$CHANGELOG"
+    # If no ## found yet (fresh changelog), insert after all current content
+    [[ "$HEADER_END" -eq 0 ]] && HEADER_END=$LINENO
     head -n "$HEADER_END" "$CHANGELOG" > "$TMPFILE"
-    echo "" >> "$TMPFILE"
     echo "$ENTRY" >> "$TMPFILE"
     tail -n +"$((HEADER_END + 1))" "$CHANGELOG" >> "$TMPFILE"
     mv "$TMPFILE" "$CHANGELOG"
