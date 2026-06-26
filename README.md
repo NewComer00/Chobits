@@ -80,7 +80,7 @@ api_key    = "sk-..."
 
 🎉 至此一切就绪，执行 `chobits-start` 命令即可启动 Chobits！🚀
 
-> [!TIP]
+> [!TIP]  
 > `chobits-start` 会 创建 或 重新连接 一个专属的 Zellij 会话。其中，守护进程、live-ascii、状态栏和插件都运行在这个独立会话中，与你的日常终端会话互不干扰。
 >
 > - **首次启动**：第一次启动 `chobits-start` 时，程序将自动创建新的 Zellij 会话。
@@ -111,18 +111,19 @@ api_key    = "sk-..."
 <details>
 <summary>展开</summary>
 
-> [!NOTE]
+> [!NOTE]  
 > 发行包内含从 [Cubism](https://www.live2d.com/en/learn/sample/) 下载的免费模型 ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/)。
 >
 > 使用前请阅读 ["免费素材许可协议"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) 和 ["Live2D Cubism 示例数据使用条款"](https://www.live2d.com/learn/sample/model-terms/)。
 
 [Releases](https://github.com/NewComer00/Chobits/releases) 页面提供以下平台的预编译二进制文件：
 
-|                  包名                      |    平台         |                      说明                       |
-| ------------------------------------------ | --------------- | ----------------------------------------------- |
-| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux    | 标准 glibc 动态链接构建                          |
-| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux    | 轻量级 musl 静态链接构建，兼容性更广             |
-| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows  | 原生 Windows 可直接运行，无需 MSYS2             |
+|                  包名                            |    平台              |                      说明                              |
+| ------------------------------------------------ | -------------------- | ------------------------------------------------------ |
+| `Chobits-x86_64-unknown-linux-gnu.tar.gz`        | x86_64 Linux         | 标准 glibc 动态链接构建                                 |
+| `Chobits-x86_64-unknown-linux-musl.tar.gz`       | x86_64 Linux         | 轻量级 musl 静态链接构建，兼容性更广                    |
+| `Chobits-aarch64-apple-darwin.tar.gz`            | Apple Silicon macOS  | 适用于 M 系列 Mac 的 arm64 构建                         |
+| `Chobits-x86_64-pc-windows-gnu.zip`              | x86_64 Windows       | 原生 Windows 可直接运行，无需 MSYS2                     |
 
 下载并解压对应平台的压缩包：
 
@@ -136,6 +137,18 @@ tar -xzf Chobits-x86_64-unknown-linux-musl.tar.gz
 ```
 
 如果你使用的是基于 glibc 的系统，也可以选择 `Chobits-x86_64-unknown-linux-gnu.tar.gz`。
+
+### macOS
+
+适用于 M 系列的 arm64 Mac 系统：
+
+```bash
+curl -LO https://github.com/NewComer00/Chobits/releases/latest/download/Chobits-aarch64-apple-darwin.tar.gz
+tar -xzf Chobits-aarch64-apple-darwin.tar.gz
+```
+
+> [!NOTE]  
+> 预编译二进制文件未经 Apple 公证。若 macOS 在首次运行时拦截 `chobits-start` 等命令，请按照 [Apple 官方说明](https://support.apple.com/zh-cn/102445)手动放行。
 
 ### Windows
 
@@ -544,7 +557,7 @@ Chobits/bin/chobits-start
 
 在 Zellij 中按 `Ctrl+o` 再按 `d` 可分离会话而不终止它，再次运行 `chobits-start` 即可重新连接。按 `Ctrl+q` 或关闭所有面板可彻底退出会话。
 
-> [!NOTE]
+> [!NOTE]  
 > 升级 Chobits 后，请运行一次 `chobits-start`，让 Zellij 加载新的布局变更（如 `snapshot_port`）和刷新后的插件权限。
 
 ### 子命令
@@ -562,7 +575,7 @@ chobits-start zellij --help
 
 这等价于使用正确的隔离路径执行 `zellij --config-dir ... --data-dir ... <args>`，无需手动指定路径。
 
-> [!NOTE]
+> [!NOTE]  
 > 分离（`Ctrl+o` 然后 `d`）后，终端快照轮询会暂停，因此没有客户端连接时不会产生 LLM 调用。
 
 ## 架构

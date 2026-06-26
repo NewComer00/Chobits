@@ -78,7 +78,7 @@ api_key    = "sk-..."
 
 🎉 You're all set! Just run `chobits-start` to launch Chobits. 🚀
 
-> [!TIP]
+> [!TIP]  
 > `chobits-start` creates or re-attaches to a dedicated Zellij session — the daemon, live-ascii, bar, and plugin all run inside it, separate from your normal terminal sessions.
 >
 > - **First launch** — a new session is created automatically.
@@ -109,18 +109,18 @@ For manual installs, see [Download from Release](#download-from-release) or [Bui
 <details>
 <summary>Click to expand</summary>
 
-> [!NOTE]
+> [!NOTE]  
 > The release package includes a free model ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) downloaded from [Cubism](https://www.live2d.com/en/learn/sample/).
 > 
 > Before using this model, please review the ["Free Material License Agreement"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) and the ["Live2D Cubism Sample Data Terms of Use"](https://www.live2d.com/learn/sample/model-terms/).
-
 Pre-built binaries are available on the [Releases](https://github.com/NewComer00/Chobits/releases) page for the following platforms:
 
-|                  Package                   |    Platform    |                      Notes                      |
-| ------------------------------------------ | -------------- | ----------------------------------------------- |
-| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux   | Standard glibc-linked build                     |
-| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux   | Lightweight, static-linked musl build           |
-| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows | Runs on native Windows; no MSYS2 required   |
+|                  Package                        |    Platform      |                      Notes                            |
+| ----------------------------------------------- | ---------------- | ----------------------------------------------------- |
+| `Chobits-x86_64-unknown-linux-gnu.tar.gz`       | x86_64 Linux     | Standard glibc-linked build                           |
+| `Chobits-x86_64-unknown-linux-musl.tar.gz`      | x86_64 Linux     | Lightweight, static-linked musl build                 |
+| `Chobits-aarch64-apple-darwin.tar.gz`           | Apple Silicon macOS | arm64 build for M-series Macs                      |
+| `Chobits-x86_64-pc-windows-gnu.zip`             | x86_64 Windows   | Runs on native Windows; no MSYS2 required             |
 
 Download and extract the archive for your platform:
 
@@ -134,6 +134,18 @@ tar -xzf Chobits-x86_64-unknown-linux-musl.tar.gz
 ```
 
 The static MUSL build (`Chobits-x86_64-unknown-linux-musl.tar.gz`) is recommended for broad compatibility across most Linux distributions. If you are on a glibc-based system, you may alternatively use `Chobits-x86_64-unknown-linux-gnu.tar.gz`.
+
+### macOS
+
+Download the archive for M-series Macs:
+
+```bash
+curl -LO https://github.com/NewComer00/Chobits/releases/latest/download/Chobits-aarch64-apple-darwin.tar.gz
+tar -xzf Chobits-aarch64-apple-darwin.tar.gz
+```
+
+> [!NOTE]  
+> The binaries are not notarized. If macOS blocks `chobits-start` on first run, follow [Apple's instructions](https://support.apple.com/en-us/102445) to allow it manually.
 
 ### Windows
 
@@ -548,7 +560,7 @@ To detach from the session without stopping it, press `Ctrl+o` then `d` inside Z
 Running `chobits-start` again will re-attach. To terminate the session entirely,
 press `Ctrl+q` or close all panes.
 
-> [!NOTE]
+> [!NOTE]  
 > After upgrading Chobits, run `chobits-start` once so Zellij picks up layout changes
 > (e.g. `snapshot_port`) and refreshed plugin permissions.
 
@@ -568,7 +580,7 @@ chobits-start zellij --help
 This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
 with the correct isolated paths — no need to know where they are.
 
-> [!NOTE]
+> [!NOTE]  
 > Detaching (`Ctrl+o` then `d`) pauses terminal snapshot polling, so there will be no LLM calls from
 > screen changes while no client is attached.
 
