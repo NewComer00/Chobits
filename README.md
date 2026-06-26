@@ -20,7 +20,7 @@ Install the latest release with one command. The installer adds `chobits-start` 
 Requires Bash or Zsh. Default install location: `~/.local/share/Chobits`.
 
 ```bash
-. <(curl -LsSf https://raw.githubusercontent.com/NewComer00/Chobits/main/install.sh)
+. <(curl -LsSf https://raw.githubusercontent.com/NewComer00/Chobits/main/scripts/install.sh)
 ```
 
 ### Install on Windows
@@ -28,7 +28,7 @@ Requires Bash or Zsh. Default install location: `~/.local/share/Chobits`.
 Requires PowerShell 5.1+. Default install location: `%LOCALAPPDATA%\Chobits`.
 
 ```powershell
-irm https://raw.githubusercontent.com/NewComer00/Chobits/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/NewComer00/Chobits/main/scripts/install.ps1 | iex
 ```
 
 ### Configure LLM Backend
@@ -165,7 +165,7 @@ git lfs install
 git clone --depth 1 https://github.com/NewComer00/Chobits.git
 cd Chobits
 # git checkout v0.2.0   # optional: match a release tag
-./build.sh --locked -y
+./scripts/build.sh --locked -y
 ```
 
 ### Manual Build

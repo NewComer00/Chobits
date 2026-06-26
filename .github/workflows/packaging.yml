@@ -38,7 +38,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        run: ./build.sh --locked -y
+        run: ./scripts/build.sh --locked -y
 
       - name: Get target triple and archive
         run: |
@@ -83,15 +83,16 @@ jobs:
 
       - name: Install cargo-binstall
         run: |
-          mkdir -p "$HOME/.cargo/bin"
+          CARGO_BIN=$(cygpath -u "$USERPROFILE/.cargo/bin")
+          mkdir -p "$CARGO_BIN"
           wget -qO /tmp/cargo-binstall.zip \
             https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip
           unzip -o /tmp/cargo-binstall.zip -d /tmp/cargo-binstall
-          install -m 755 /tmp/cargo-binstall/cargo-binstall.exe "$HOME/.cargo/bin/cargo-binstall.exe"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          install -m 755 /tmp/cargo-binstall/cargo-binstall.exe "$CARGO_BIN/cargo-binstall.exe"
+          echo "$CARGO_BIN" >> "$GITHUB_PATH"
 
       - name: Build
-        run: ./build.sh --locked -y
+        run: ./scripts/build.sh --locked -y
 
       - name: Get target triple
         run: |
@@ -148,7 +149,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: ./build.sh --locked -y
+        run: ./scripts/build.sh --locked -y
 
       - name: Get target triple and archive
         shell: bash
