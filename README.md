@@ -192,11 +192,11 @@ cargo install --path "crates/chobits-start" --root install/Chobits
 Install other binaries to the directory `install/Chobits/local/bin/`:
 
 ```bash
-for c in "" "-send" "-bar"; do cargo install --path "crates/chobits$c" --root install/Chobits/local; done
+for c in "" "-bar"; do cargo install --path "crates/chobits$c" --root install/Chobits/local; done
 cargo install --path crates/chobits-zellij --root install/Chobits/local --target wasm32-wasip1
 ```
 
-All three binaries (`chobits`, `chobits-send`, `chobits-bar`) and the WASM plugin (`chobits-zellij.wasm`) should now be in `install/Chobits/local/bin/`.
+The `chobits` and `chobits-bar` binaries and the WASM plugin (`chobits-zellij.wasm`) should now be in `install/Chobits/local/bin/`.
 
 Then install dependencies (e.g. `live-ascii` and `zellij`) according to their instructions. For convenience, just install them into the same `install/Chobits/local/bin/` directory to keep everything self-contained.
 
@@ -256,6 +256,12 @@ cp example_config.toml install/Chobits/config.toml
 
 </details>
 
+### Format, Lint, and Test
+
+```bash
+cargo fmt --all --check && cargo clippy-all && cargo test-all && cargo check -p chobits-zellij --target wasm32-wasip1
+```
+
 </details>
 
 ## Deployment
@@ -287,7 +293,6 @@ Chobits/
 │   └── bin/
 │       ├── chobits
 │       ├── chobits-bar
-│       ├── chobits-send
 │       ├── chobits-zellij.wasm
 │       ├── live-ascii
 │       └── zellij               # .exe on Windows
@@ -357,19 +362,19 @@ You genuinely care about what the user is working on.
 
 ### `[snapshot]` — Terminal Polling
 
-Controls how the Zellij plugin captures the currently focused pane (in text) and how often it polls. The snapshot taken will be sent to LLM backend when it's not busy.
+Controls how the Zellij plugin captures the currently focused pane (in text) and how often it polls. Snapshots are truncated to `max_bytes`, then posted to `http://127.0.0.1:{port}/snapshot` via Zellij's `web_request` API (localhost only — not exposed on your LAN). The daemon forwards changed snapshots to the LLM when it is not busy.
 
-If no change happens to the focused Zellij pane, no message will be sent to save tokens.
+If the focused pane content is unchanged since the last poll, the daemon skips the LLM call to save tokens.
 
 |       Key       | Default |              Description              |
 | --------------- | ------- | ------------------------------------- |
-| `port`          | `7878`  | TCP — daemon receives snapshots       |
+| `port`          | `7880`  | Localhost HTTP — plugin `POST /snapshot` |
 | `max_bytes`     | `4096`  | Truncate snapshots (head + tail)      |
-| `interval_secs` | `10`    | Plugin `dump-screen` polling interval |
+| `interval_secs` | `10`    | Plugin pane polling interval          |
 
 ```toml
 [snapshot]
-port          = 7878
+port          = 7880
 max_bytes     = 4096
 interval_secs = 10
 ```
@@ -427,7 +432,9 @@ offset_y       = "95%"
 
 Defines how Zellij arranges panes — terminal, live-ascii, bar, tab-bar, and status-bar.
 
-The KDL layout uses templates `{live_ascii_bin}`, `{chobits_bar_bin}`, `{plugin_path}`, `{live_ascii_args}`, `{interval_secs}`, etc. — these are filled in at launch time, so keep them as literal placeholders.
+The KDL layout uses templates `{chobits_bin}`, `{plugin_path}`, `{live_ascii_bin}`, `{chobits_bar_bin}`, `{live_ascii_args}`, `{interval_secs}`, `{max_bytes}`, `{snapshot_port}`, etc. — these are filled in at launch time, so keep them as literal placeholders.
+
+On each launch, `chobits-start` writes the resolved layout to `.zellij/config/layouts/layout.kdl` and pre-grants the WASM plugin permissions (`ReadApplicationState`, `ReadPaneContents`, `WebAccess`).
 
 ```toml
 [zellij]
@@ -451,9 +458,9 @@ layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
-                zellij_bin "{zellij_bin}"
-                chobits_send_bin "{chobits_send_bin}"
+                snapshot_port "{snapshot_port}"
                 interval_secs "{interval_secs}"
+                max_bytes "{max_bytes}"
             }
         }
     }
@@ -470,7 +477,7 @@ layout {
 │   (zellij native    │          │
 │    with plugin      ├──────────┤
 │    polling via      │chi bar   │
-│    dump-screen)     │(ratatui) │
+│    pane scrollback) │(ratatui) │
 └─────────────────────┴──────────┘
 ```
 
@@ -519,9 +526,13 @@ On first launch a new Zellij session is created. On subsequent runs,
 `chobits-start` detects the existing session and re-attaches automatically.
 If multiple sessions are running, you will be prompted to select one.
 
-To detach from the session without stopping it, press `Ctrl+o d` inside Zellij.
+To detach from the session without stopping it, press `Ctrl+o` then `d` inside Zellij.
 Running `chobits-start` again will re-attach. To terminate the session entirely,
 press `Ctrl+q` or close all panes.
+
+> [!NOTE]
+> After upgrading Chobits, run `chobits-start` once so Zellij picks up layout changes
+> (e.g. `snapshot_port`) and refreshed plugin permissions.
 
 ### Subcommands
 
@@ -540,26 +551,32 @@ This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
 with the correct isolated paths — no need to know where they are.
 
 > [!NOTE]
-> Detaching (`Ctrl+o d`) pauses terminal snapshot polling, so there will be no LLM calls from
+> Detaching (`Ctrl+o` then `d`) pauses terminal snapshot polling, so there will be no LLM calls from
 > screen changes while no client is attached.
 
 ## Architecture
 
-`chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Port numbers below are **defaults** — configure them in `[snapshot] port`, `[bar] port`, and `[expressions] osf_port`.
+`chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Default localhost ports:
+
+| Port   | Config key              | Protocol | Purpose                          |
+| ------ | ----------------------- | -------- | -------------------------------- |
+| `7880` | `[snapshot] port`       | HTTP     | Plugin → daemon snapshots        |
+| `7879` | `[bar] port`            | TCP      | Daemon → chobits-bar reactions   |
+| `11573`| `[expressions] osf_port`| UDP      | Daemon → live-ascii OSF frames   |
 
 **Data flow** (while a client is attached):
 
 ```
 chobits-start ──▶ zellij session (layout from config.toml)
                       │
-chobits-zellij ──run_command──▶ zellij dump-screen ──▶ plugin (screen text)
+chobits-zellij ──get_pane_scrollback──▶ snapshot JSON
                       │
-                      └──run_command──▶ chobits-send ──TCP:7878──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
-                                                                              ├── HTTP REST ──▶ LLM backend
-                                                                              └── UDP:11573 ──▶ live-ascii
+                      └──HTTP POST :7880──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
+                                              ├── HTTP REST ──▶ LLM backend
+                                              └── UDP:11573 ──▶ live-ascii
 ```
 
-When no client is attached (detached), the plugin skips `dump-screen` polling and ignores in-flight snapshot results.
+When no client is attached (detached), the plugin skips pane polling.
 
 **Layout** (inside Zellij):
 
@@ -568,16 +585,14 @@ flowchart TB
     subgraph Zellij["Zellij session"]
         direction LR
         Terminal["Main terminal<br/>chobits-zellij plugin"]
+        Daemon["chobits daemon"]
         LiveAscii["live-ascii"]
         Bar["chobits-bar"]
     end
 
-    Send["chobits-send"]
-    Daemon["chobits daemon<br/>snapshot → LLM → text + expression"]
     LLM["LLM backend<br/>(Ollama or compatible API)"]
 
-    Terminal -->|"dump-screen + send"| Send
-    Send -->|"TCP :7878"| Daemon
+    Terminal -->|"HTTP POST :7880"| Daemon
     Daemon -->|"HTTP REST"| LLM
     Daemon -->|"UDP :11573"| LiveAscii
     Daemon -->|"TCP :7879"| Bar
@@ -587,9 +602,7 @@ flowchart TB
 
 | Link                          | Protocol                                      | Direction |
 | ----------------------------- | --------------------------------------------- | --------- |
-| chobits-zellij → zellij       | `run_command` — `dump-screen`                 | one-way   |
-| chobits-zellij → chobits-send | `run_command` (subprocess)                    | one-way   |
-| chobits-send → chobits        | TCP `:7878` (default), JSON snapshot payload  | one-way   |
+| chobits-zellij → chobits        | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | one-way   |
 | chobits → LLM                 | HTTP REST (Ollama or OpenAI-compatible)       | req/reply |
 | chobits → chobits-bar         | TCP `:7879` (default), newline-delimited text | one-way   |
 | chobits → live-ascii          | UDP `:11573` (default), OSF frames            | one-way   |

@@ -13,8 +13,17 @@ pub struct LlmResponse {
 // ── backend enum ─────────────────────────────────────────
 
 pub enum Backend {
-    Ollama { url: String, model: String, max_tokens: u32 },
-    OpenAiCompatible { url: String, model: String, api_key: String, max_tokens: u32 },
+    Ollama {
+        url: String,
+        model: String,
+        max_tokens: u32,
+    },
+    OpenAiCompatible {
+        url: String,
+        model: String,
+        api_key: String,
+        max_tokens: u32,
+    },
 }
 
 impl Backend {
@@ -38,10 +47,17 @@ impl Backend {
 
     pub fn query(&self, prompt: &str) -> Option<String> {
         match self {
-            Backend::Ollama { url, model, max_tokens } => query_ollama(url, model, *max_tokens, prompt),
-            Backend::OpenAiCompatible { url, model, api_key, max_tokens } => {
-                query_openai(url, model, api_key, *max_tokens, prompt)
-            }
+            Backend::Ollama {
+                url,
+                model,
+                max_tokens,
+            } => query_ollama(url, model, *max_tokens, prompt),
+            Backend::OpenAiCompatible {
+                url,
+                model,
+                api_key,
+                max_tokens,
+            } => query_openai(url, model, api_key, *max_tokens, prompt),
         }
     }
 }
@@ -50,7 +66,11 @@ impl Backend {
 
 /// Build the full system prompt from the user's persona description and the
 /// expression files found on disk.  Users never touch format details.
-pub fn build_system_prompt(name: &str, persona_description: &str, expressions_dir: &Path) -> String {
+pub fn build_system_prompt(
+    name: &str,
+    persona_description: &str,
+    expressions_dir: &Path,
+) -> String {
     let expressions = scan_expressions(expressions_dir);
     let list = expressions.join(", ");
     format!(
@@ -119,7 +139,13 @@ fn query_ollama(url: &str, model: &str, max_tokens: u32, prompt: &str) -> Option
 
 // ── OpenAI-compatible ────────────────────────────────────
 
-fn query_openai(url: &str, model: &str, api_key: &str, max_tokens: u32, prompt: &str) -> Option<String> {
+fn query_openai(
+    url: &str,
+    model: &str,
+    api_key: &str,
+    max_tokens: u32,
+    prompt: &str,
+) -> Option<String> {
     let body = serde_json::json!({
         "model": model,
         "messages": [
@@ -173,5 +199,138 @@ pub fn parse_response(raw: &str) -> Option<LlmResponse> {
                 expression: "neutral".into(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::LlmConfig;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempExpressionsDir(PathBuf);
+
+    impl TempExpressionsDir {
+        fn new() -> Self {
+            let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "chobits-llm-test-{}-{}",
+                std::process::id(),
+                id
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp expressions dir");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn touch_expression(&self, name: &str) {
+            std::fs::write(self.0.join(format!("{name}.osf.bin")), b"x")
+                .expect("write expression stub");
+        }
+    }
+
+    impl Drop for TempExpressionsDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn sample_llm_config(backend: &str) -> LlmConfig {
+        LlmConfig {
+            backend: backend.into(),
+            url: "http://127.0.0.1:11434".into(),
+            model: "test-model".into(),
+            max_tokens: 128,
+            api_key: "secret".into(),
+        }
+    }
+
+    #[test]
+    fn from_config_selects_ollama_backend() {
+        let cfg = sample_llm_config("ollama");
+        match Backend::from_config(&cfg) {
+            Backend::Ollama {
+                model, max_tokens, ..
+            } => {
+                assert_eq!(model, "test-model");
+                assert_eq!(max_tokens, 128);
+            }
+            Backend::OpenAiCompatible { .. } => panic!("expected ollama backend"),
+        }
+    }
+
+    #[test]
+    fn from_config_defaults_to_openai_compatible() {
+        let cfg = sample_llm_config("openai");
+        match Backend::from_config(&cfg) {
+            Backend::OpenAiCompatible { api_key, model, .. } => {
+                assert_eq!(model, "test-model");
+                assert_eq!(api_key, "secret");
+            }
+            Backend::Ollama { .. } => panic!("expected openai-compatible backend"),
+        }
+    }
+
+    #[test]
+    fn scan_expressions_excludes_neutral_and_sorts() {
+        let dir = TempExpressionsDir::new();
+        dir.touch_expression("happy");
+        dir.touch_expression("neutral");
+        dir.touch_expression("blink");
+
+        assert_eq!(
+            scan_expressions(dir.path()),
+            vec!["blink".to_string(), "happy".to_string()]
+        );
+    }
+
+    #[test]
+    fn scan_expressions_empty_dir_yields_neutral() {
+        let dir = TempExpressionsDir::new();
+        assert_eq!(scan_expressions(dir.path()), vec!["neutral".to_string()]);
+    }
+
+    #[test]
+    fn build_system_prompt_includes_persona_and_expression_list() {
+        let dir = TempExpressionsDir::new();
+        dir.touch_expression("happy");
+        dir.touch_expression("sad");
+
+        let prompt = build_system_prompt("Chi", "Warm and curious.", dir.path());
+        assert!(prompt.contains("You are Chi."));
+        assert!(prompt.contains("Warm and curious."));
+        assert!(prompt.contains("happy, sad"));
+        assert!(!prompt.contains("neutral"));
+    }
+
+    #[test]
+    fn parse_response_accepts_clean_json() {
+        let raw = r#"{"text":"nice work!","expression":"happy"}"#;
+        let parsed = parse_response(raw).expect("parsed");
+        assert_eq!(parsed.text, "nice work!");
+        assert_eq!(parsed.expression, "happy");
+    }
+
+    #[test]
+    fn parse_response_repairs_markdown_fenced_json() {
+        let raw = "```json\n{\"text\":\"hey\",\"expression\":\"blink\"}\n```";
+        let parsed = parse_response(raw).expect("parsed");
+        assert_eq!(parsed.text, "hey");
+        assert_eq!(parsed.expression, "blink");
+    }
+
+    #[test]
+    fn parse_response_falls_back_when_fields_missing() {
+        let raw = r#"{"text":"only text"}"#;
+        let parsed = parse_response(raw).expect("fallback");
+        assert_eq!(parsed.expression, "neutral");
+        assert!(parsed.text.contains("only text"));
     }
 }

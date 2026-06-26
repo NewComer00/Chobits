@@ -5,7 +5,8 @@ fn main() {
 
     let rust = format!(
         "&[{}]",
-        PLUGIN_PERMISSIONS.iter()
+        PLUGIN_PERMISSIONS
+            .iter()
             .map(|p| format!("PermissionType::{}", p))
             .collect::<Vec<_>>()
             .join(",")

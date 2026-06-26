@@ -1,15 +1,18 @@
+use chobits_meta::snapshot::{truncate_snapshot, DEFAULT_SNAPSHOT_PORT};
+use chobits_meta::viewport::{active_line_from_viewport, pane_screen_text as viewport_text};
 use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
-const PLUGIN_PERMISSIONS: &[PermissionType] = include!(
-    concat!(env!("OUT_DIR"), "/plugin_permissions.rs")
-);
+const PLUGIN_PERMISSIONS: &[PermissionType] =
+    include!(concat!(env!("OUT_DIR"), "/plugin_permissions.rs"));
+
+const DEFAULT_MAX_BYTES: usize = 4096;
 
 struct State {
     manifest: PaneManifest,
-    chobits_send_bin: String,
-    zellij_bin: String,
+    snapshot_port: u16,
     interval_secs: f64,
+    max_bytes: usize,
     detached: bool,
 }
 
@@ -17,9 +20,9 @@ impl Default for State {
     fn default() -> Self {
         State {
             manifest: PaneManifest::default(),
-            chobits_send_bin: "chobits-send".into(),
-            zellij_bin: "zellij".into(),
+            snapshot_port: DEFAULT_SNAPSHOT_PORT,
             interval_secs: 10.0,
+            max_bytes: DEFAULT_MAX_BYTES,
             detached: false,
         }
     }
@@ -29,27 +32,26 @@ register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
-        self.chobits_send_bin = configuration
-            .get("chobits_send_bin")
-            .cloned()
-            .unwrap_or_else(|| "chobits-send".into());
-
-        self.zellij_bin = configuration
-            .get("zellij_bin")
-            .cloned()
-            .unwrap_or_else(|| "zellij".into());
+        self.snapshot_port = configuration
+            .get("snapshot_port")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_SNAPSHOT_PORT);
 
         self.interval_secs = configuration
             .get("interval_secs")
             .and_then(|v| v.parse().ok())
             .unwrap_or(10.0);
 
+        self.max_bytes = configuration
+            .get("max_bytes")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_MAX_BYTES);
+
         request_permission(PLUGIN_PERMISSIONS);
 
         subscribe(&[
             EventType::PaneUpdate,
             EventType::Timer,
-            EventType::RunCommandResult,
             EventType::SessionUpdate,
         ]);
 
@@ -77,28 +79,6 @@ impl ZellijPlugin for State {
                 set_timeout(self.interval_secs);
                 false
             }
-            Event::RunCommandResult(_exit_code, stdout, _stderr, context) => {
-                if !self.detached
-                    && context.get("type").map(|s| s.as_str()) == Some("screen")
-                {
-                    let raw = String::from_utf8_lossy(&stdout).to_string();
-                    let content = strip_ansi_escapes::strip_str(&raw).trim().to_string();
-                    if !content.is_empty() {
-                        let tab = context.get("tab").cloned().unwrap_or_default();
-                        let cmd = context.get("cmd").cloned().unwrap_or_default();
-                        let snapshot = format!(
-                            "{{\"tab\":{},\"cmd\":{},\"screen\":{}}}",
-                            serde_json::to_string(&tab).unwrap(),
-                            serde_json::to_string(&cmd).unwrap(),
-                            serde_json::to_string(&content).unwrap(),
-                        );
-                        let mut ctx = BTreeMap::new();
-                        ctx.insert("type".to_string(), "snapshot".to_string());
-                        run_command(&[&self.chobits_send_bin, "--text", &snapshot], ctx);
-                    }
-                }
-                false
-            }
             _ => false,
         }
     }
@@ -108,34 +88,62 @@ impl ZellijPlugin for State {
 
 impl State {
     fn poll_focused_pane(&self) {
-        let Some((tab_idx, pane)) = self.manifest.panes.iter()
-            .find_map(|(tab_idx, panes)| {
-                panes.iter()
-                    .find(|p| p.is_focused && !p.is_plugin)
-                    .map(|p| (tab_idx, p))
-            })
-        else {
+        let Some((tab_idx, pane)) = self.manifest.panes.iter().find_map(|(tab_idx, panes)| {
+            panes
+                .iter()
+                .find(|p| p.is_focused && !p.is_plugin)
+                .map(|p| (tab_idx, p))
+        }) else {
             return;
         };
 
-        let cmd_str = match get_pane_running_command(PaneId::Terminal(pane.id)) {
-            Ok(args) if !args.is_empty() => args.join(" "),
-            // Err (unsupported/unavailable) and Ok([]) (idle shell) both fall back
-            // to the pane's terminal_command or title.
-            _ => pane.terminal_command
-                    .clone()
-                    .unwrap_or_else(|| pane.title.clone()),
+        let pane_id = PaneId::Terminal(pane.id);
+        let contents = match get_pane_scrollback(pane_id, false) {
+            Ok(contents) => contents,
+            Err(_) => return,
         };
 
-        let pane_id_str = format!("terminal_{}", pane.id);
-        let mut ctx = BTreeMap::new();
-        ctx.insert("type".to_string(), "screen".to_string());
-        ctx.insert("tab".to_string(), tab_idx.to_string());
-        ctx.insert("cmd".to_string(), cmd_str);
-        run_command(
-            &[&self.zellij_bin, "action", "dump-screen",
-              "--pane-id", &pane_id_str],
-            ctx,
+        let screen = viewport_text(&contents.viewport);
+        if screen.is_empty() {
+            return;
+        }
+
+        let cmd_str = match get_pane_running_command(pane_id) {
+            Ok(args) if !args.is_empty() => args.join(" "),
+            _ => pane
+                .terminal_command
+                .clone()
+                .unwrap_or_else(|| pane.title.clone()),
+        };
+
+        // Manifest cursor can lag behind scrollback; query pane at poll time.
+        let pane_info = get_pane_info(pane_id);
+        let pane_for_cursor = pane_info.as_ref().unwrap_or(pane);
+        let active_line = active_line_from_pane(pane_for_cursor, &contents.viewport);
+        let snapshot = truncate_snapshot(
+            &serde_json::json!({
+                "tab": tab_idx.to_string(),
+                "cmd": cmd_str,
+                "active_line": active_line,
+                "screen": screen,
+            })
+            .to_string(),
+            self.max_bytes,
         );
+
+        let url = format!("http://127.0.0.1:{}/snapshot", self.snapshot_port);
+        let mut headers = BTreeMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let mut ctx = BTreeMap::new();
+        ctx.insert("type".to_string(), "snapshot".to_string());
+        web_request(url, HttpVerb::Post, headers, snapshot.into_bytes(), ctx);
     }
+}
+
+fn active_line_from_pane(pane: &PaneInfo, viewport: &[String]) -> String {
+    let Some((_col, cursor_y)) = pane.cursor_coordinates_in_pane else {
+        return String::new();
+    };
+    active_line_from_viewport(viewport, cursor_y, pane.pane_y, pane.pane_content_y)
 }

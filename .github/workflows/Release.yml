@@ -1,178 +1,70 @@
 name: Release
 
+# Version bumps and release PRs on main (release-plz).
+# Merge the release PR to create a v* tag → Tests → Packaging.
+#
+# Required: repository secret RELEASE_PLZ_TOKEN (classic PAT with repo + workflow
+# scopes, or fine-grained with Contents + Pull requests write). Used so release
+# PRs run Tests and tags trigger Tests/Packaging. If you sign git tags, the
+# release job also needs persist-credentials so git can push signed tags.
+
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  build-linux:
-    name: Build (Linux)
+  release-plz-release:
+    name: release-plz / release (tag)
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'NewComer00'
+    permissions:
+      contents: write
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          lfs: true
+          fetch-depth: 0
+          # Signed tags are pushed via git CLI, not the GitHub API.
+          persist-credentials: true
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq wget unzip make gcc
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Install Rust targets
-        run: rustup target add wasm32-wasip1
-
-      - name: Install cargo-binstall
-        run: |
-          mkdir -p "$HOME/.cargo/bin"
-          wget -qO /tmp/cargo-binstall.tgz \
-            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
-          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
-          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Build
-        run: ./build.sh --locked -y
-
-      - name: Get target triple and archive
-        run: |
-          TARGET=$(rustc -vV | grep host | awk '{print $2}')
-          echo "TARGET=$TARGET" >> $GITHUB_ENV
-          cd install
-          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
-
-      - uses: actions/upload-artifact@v4
+      - name: Run release-plz release
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
         with:
-          name: ${{ env.TARGET }}
-          path: Chobits-${{ env.TARGET }}.tar.gz
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
-  build-windows:
-    name: Build (Windows / MSYS2 UCRT64)
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-git
-            mingw-w64-ucrt-x86_64-git-lfs
-            mingw-w64-ucrt-x86_64-rust
-            mingw-w64-ucrt-x86_64-rust-wasm
-            mingw-w64-ucrt-x86_64-jq
-            mingw-w64-ucrt-x86_64-wget
-            mingw-w64-ucrt-x86_64-gcc
-            unzip
-            make
-
-      - name: Install cargo-binstall
-        run: |
-          mkdir -p "$HOME/.cargo/bin"
-          wget -qO /tmp/cargo-binstall.zip \
-            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip
-          unzip -o /tmp/cargo-binstall.zip -d /tmp/cargo-binstall
-          install -m 755 /tmp/cargo-binstall/cargo-binstall.exe "$HOME/.cargo/bin/cargo-binstall.exe"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Build
-        run: ./build.sh --locked -y
-
-      - name: Get target triple
-        run: |
-          TARGET=$(rustc -vV | grep host | awk '{print $2}')
-          echo "TARGET=$TARGET" >> $GITHUB_ENV
-
-      - name: Archive
-        shell: pwsh
-        run: Compress-Archive -Path install/Chobits -DestinationPath "Chobits-$env:TARGET.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.TARGET }}
-          path: Chobits-${{ env.TARGET }}.zip
-
-  build-alpine:
-    name: Build (Alpine Linux)
+  release-plz-pr:
+    name: release-plz / open release PR
     runs-on: ubuntu-latest
-    container:
-      image: alpine:latest
+    if: github.repository_owner == 'NewComer00'
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
     steps:
-      - name: Install checkout dependencies
-        run: apk add --no-cache git git-lfs
-
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          lfs: true
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
-      - name: Install build dependencies
-        run: |
-          apk add --no-cache rustup bash jq wget unzip make gcc musl-dev
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Install Rust toolchain
-        run: |
-          rustup-init -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Install Rust targets
-        shell: bash
-        run: rustup target add wasm32-wasip1
-
-      - name: Install cargo-binstall
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.cargo/bin"
-          wget -qO /tmp/cargo-binstall.tgz \
-            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
-          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
-          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Build
-        shell: bash
-        run: ./build.sh --locked -y
-
-      - name: Get target triple and archive
-        shell: bash
-        run: |
-          TARGET=$(rustc -vV | grep host | awk '{print $2}')
-          echo "TARGET=$TARGET" >> $GITHUB_ENV
-          cd install
-          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
-
-      - uses: actions/upload-artifact@v4
+      - name: Run release-plz release-pr
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
         with:
-          name: ${{ env.TARGET }}
-          path: Chobits-${{ env.TARGET }}.tar.gz
-
-  release:
-    name: Create Release
-    needs: [build-linux, build-windows, build-alpine]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-
-      - name: Verify release artifacts
-        run: |
-          ls -la Chobits-*
-          count=$(ls -1 Chobits-* | wc -l)
-          test "$count" -eq 3
-          test $(ls -1 Chobits-*.tar.gz | wc -l) -eq 2
-          test $(ls -1 Chobits-*.zip | wc -l) -eq 1
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: Chobits-*
-          generate_release_notes: true
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

@@ -1,13 +1,13 @@
-use std::fs;
 use chrono::Local;
+use std::fs;
 
-use chobits_meta::PLUGIN_PERMISSIONS;
 use chobits::zellij::ZellijRunner;
+use chobits_meta::PLUGIN_PERMISSIONS;
+
+mod session;
 
 fn main() {
-    println!("╔══════════════════════════════════════╗");
-    println!("║       Chobits — Terminal Companion   ║");
-    println!("╚══════════════════════════════════════╝");
+    print_banner();
 
     let config_dir = chobits::config::chobits_dir();
     let _ = fs::create_dir_all(&config_dir);
@@ -24,7 +24,11 @@ fn main() {
     let zellij_bin = chobits::config::find_executable("zellij");
     let zellij_config_dir = config.zellij.config_dir.clone();
     let zellij_data_dir = config.zellij.data_dir.clone();
-    let zellij = ZellijRunner::new(zellij_bin, zellij_config_dir.clone(), zellij_data_dir.clone());
+    let zellij = ZellijRunner::new(
+        zellij_bin,
+        zellij_config_dir.clone(),
+        zellij_data_dir.clone(),
+    );
 
     // Early exit for subcommands
     let mut args = std::env::args().skip(1);
@@ -57,33 +61,42 @@ fn main() {
     // 2. Build layout
     let config_path = chobits::config::config_path();
     let interval = config.snapshot.interval_secs;
+    let max_bytes = config.snapshot.max_bytes;
+    let snapshot_port = config.snapshot.port;
     let live_ascii_args = chobits::config::live_ascii_args(&config.live_ascii);
     let chobits_bin = chobits::config::find_executable("chobits");
     let wasm_path = chobits::config::find_wasm("chobits-zellij.wasm");
     let live_ascii_bin = chobits::config::find_executable("live-ascii");
     let chobits_bar_bin = chobits::config::find_executable("chobits-bar");
-    let chobits_send_bin = chobits::config::find_executable("chobits-send");
 
     let template = chobits::config::load_layout_from_config(&config_path);
-    let final_kdl = chobits::config::build_layout_kdl_from(
-        &template,
-        &chobits_bin,
-        &wasm_path,
-        interval,
-        &live_ascii_args,
-        &live_ascii_bin,
-        &chobits_bar_bin,
-        &chobits_send_bin,
-        &zellij.bin,
-    );
+    let layout_params = chobits::config::LayoutKdlParams {
+        chobits_bin: &chobits_bin,
+        plugin_wasm: &wasm_path,
+        interval_secs: interval,
+        max_bytes,
+        snapshot_port,
+        live_ascii_args: &live_ascii_args,
+        live_ascii_bin: &live_ascii_bin,
+        chobits_bar_bin: &chobits_bar_bin,
+    };
+    let final_kdl = chobits::config::build_layout_kdl_from(&template, &layout_params);
 
     // 3. Create Zellij directories and write layout.kdl
     let zellij_layout_dir = zellij_config_dir.join("layouts");
     let zellij_plugin_dir = zellij_data_dir.join("plugins");
 
-    for dir in [&zellij_config_dir, &zellij_data_dir, &zellij_layout_dir, &zellij_plugin_dir] {
+    for dir in [
+        &zellij_config_dir,
+        &zellij_data_dir,
+        &zellij_layout_dir,
+        &zellij_plugin_dir,
+    ] {
         if let Err(e) = fs::create_dir_all(dir) {
-            eprintln!("[start] Warning: could not create Zellij dir {:?}: {e}", dir);
+            eprintln!(
+                "[start] Warning: could not create Zellij dir {:?}: {e}",
+                dir
+            );
         }
     }
 
@@ -98,23 +111,29 @@ fn main() {
     }
 
     // 5. Attach to existing session or create a new one
-    match zellij.list_sessions().as_slice() {
+    let sessions = match zellij.list_sessions() {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            eprintln!("[start] Failed to list Zellij sessions: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    match sessions.as_slice() {
         [] => {
             let session_name = format!("chobits-{}", timestamp);
             println!("[start] Creating new session: {session_name}");
             match zellij.new_session(&session_name, &layout_path) {
-                Ok(s) if !s.success() => eprintln!("[start] Zellij exited with code {:?}", s.code()),
+                Ok(s) if !s.success() => {
+                    eprintln!("[start] Zellij exited with code {:?}", s.code())
+                }
                 Err(e) => eprintln!("[start] Failed to launch zellij: {e}"),
                 _ => {}
             }
         }
         [session_name] => {
             println!("[start] Attaching to existing session: {session_name}");
-            match zellij.attach(session_name) {
-                Ok(s) if !s.success() => eprintln!("[start] Zellij attach exited with code {:?}", s.code()),
-                Err(e) => eprintln!("[start] Failed to attach: {e}"),
-                _ => {}
-            }
+            attach_session(&zellij, session_name);
         }
         sessions => {
             println!("[start] Multiple chobits sessions running:");
@@ -127,17 +146,63 @@ fn main() {
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).ok();
 
-            match input.trim().parse::<usize>().ok().filter(|&n| n >= 1 && n <= sessions.len()) {
+            match session::parse_session_choice(&input, sessions.len()) {
                 Some(n) => {
                     let session_name = &sessions[n - 1];
                     println!("[start] Attaching to: {session_name}");
-                    let _ = zellij.attach(session_name);
+                    attach_session(&zellij, session_name);
                 }
                 None => {
                     eprintln!("[start] Invalid selection, aborting.");
                     std::process::exit(1);
                 }
             }
+        }
+    }
+}
+
+fn attach_session(zellij: &ZellijRunner, session_name: &str) {
+    match zellij.attach(session_name) {
+        Ok(s) if !s.success() => {
+            eprintln!("[start] Zellij attach exited with code {:?}", s.code());
+        }
+        Err(e) => eprintln!("[start] Failed to attach: {e}"),
+        _ => {}
+    }
+}
+
+const RESET: &str = "\x1b[0m";
+
+fn print_banner() {
+    // Generated with https://patorjk.com/software/taag/#p=display&f=PuShEaD&t=CHOBITS&x=none&ft=thedraw
+    let colored = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let lines = [
+        (
+            "▄▀▀▀▄ █   █ ▄▀▀▀▄ █▀▀▀▄ ▀▀█▀▀ ▀▀█▀▀ ▄▀▀▀▄",
+            "\x1b[38;2;249;168;212m",
+        ),
+        (
+            "▓     ▓   ▓ ▓   ▓ ▓   ▓   ▓     ▓   ▓    ",
+            "\x1b[38;2;244;114;182m",
+        ),
+        (
+            "▒     ▒ ▀ ▒ ▒   ▒ ▒  ▀▄   ▒     ▒    ▀▀▀▄",
+            "\x1b[38;2;232;121;249m",
+        ),
+        (
+            "░   ▄ ░   ░ ░   ░ ░   ░   ░     ░   ▄   ░",
+            "\x1b[38;2;167;139;250m",
+        ),
+        (
+            " ▀▀▀  ▀   ▀  ▀▀▀  ▀▀▀▀  ▀▀▀▀▀   ▀    ▀▀▀ ",
+            "\x1b[38;2;96;165;250m",
+        ),
+    ];
+    for (text, color) in lines {
+        if colored {
+            println!("{}{}{}", color, text, RESET);
+        } else {
+            println!("{text}");
         }
     }
 }

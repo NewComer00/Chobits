@@ -1,8 +1,8 @@
 #![allow(dead_code)]
+use directories::BaseDirs;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use directories::BaseDirs;
 
 // ╔═══════════════════════════════════════════════════════════════════════╗
 // ║  CONFIG  — Single source of truth for every path and default.         ║
@@ -11,10 +11,11 @@ use directories::BaseDirs;
 // ║  Chobits is a portable, self-contained install:                       ║
 // ║                                                                       ║
 // ║    <chobits-root>/                                                    ║
-// ║    ├── bin/         (this binary + sibling executables + .wasm)       ║
+// ║    ├── bin/         (chobits-start)                                   ║
+// ║    ├── local/bin/   (chobits, chobits-bar, plugin .wasm, …)         ║
 // ║    ├── config.toml  (user config)                                     ║
+// ║    ├── .zellij/     (Zellij config/data; layout.kdl written here)    ║
 // ║    ├── expressions/ (default location)                                ║
-// ║    ├── layout.kdl   (auto gen upon each run)                          ║
 // ║    ├── logs/        (auto gen upon each run)                          ║
 // ║    └── models/      (default location)                                ║
 // ║                                                                       ║
@@ -24,11 +25,11 @@ use directories::BaseDirs;
 ///   `{chobits_bin}`          — absolute path to the `chobits` daemon binary
 ///   `{plugin_path}`          — absolute path to the `.wasm` file
 ///   `{interval_secs}`        — polling interval in seconds
+///   `{max_bytes}`            — snapshot size cap passed to the plugin
 ///   `{live_ascii_args}`      — live-ascii CLI args built from `[live-ascii]`
 ///   `{live_ascii_bin}`       — absolute path to the bundled `live-ascii` binary
 ///   `{chobits_bar_bin}`      — absolute path to the bundled `chobits-bar` binary
-///   `{chobits_send_bin}`     — absolute path to the bundled `chobits-send` binary
-///   `{zellij_bin}`           — absolute path to the bundled `zellij` binary
+///   `{snapshot_port}`        — HTTP port for plugin snapshot POSTs
 pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
     pane size=1 borderless=true {
         plugin location="tab-bar"
@@ -46,9 +47,9 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
-                zellij_bin "{zellij_bin}"
-                chobits_send_bin "{chobits_send_bin}"
+                snapshot_port "{snapshot_port}"
                 interval_secs "{interval_secs}"
+                max_bytes "{max_bytes}"
             }
         }
     }
@@ -68,7 +69,7 @@ pub struct Config {
     #[allow(dead_code)]
     pub zellij: ZellijConfig,
     #[allow(dead_code)]
-    #[serde(rename = "live-ascii")]  // TOML [live-ascii] → Rust live_ascii
+    #[serde(rename = "live-ascii")] // TOML [live-ascii] → Rust live_ascii
     pub live_ascii: LiveAsciiConfig,
     #[serde(default)]
     pub bar: BarConfig,
@@ -99,13 +100,13 @@ pub struct ZellijConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SnapshotConfig {
-    /// TCP port the daemon listens on for terminal snapshots.
+    /// Localhost HTTP port for `POST /snapshot` from the Zellij plugin.
     #[serde(default = "default_snapshot_port")]
     pub port: u16,
     /// Truncate incoming snapshot text to this many bytes (head + tail kept).
     #[serde(default = "default_max_snapshot_bytes")]
     pub max_bytes: usize,
-    // Dump-screen polling interval
+    // Plugin pane polling interval (see `[snapshot] interval_secs`).
     #[serde(default = "default_interval_secs")]
     #[allow(dead_code)]
     pub interval_secs: u64,
@@ -178,7 +179,7 @@ fn default_history_length() -> usize {
 }
 
 fn default_snapshot_port() -> u16 {
-    7878
+    chobits_meta::DEFAULT_SNAPSHOT_PORT
 }
 
 fn default_bar_port() -> u16 {
@@ -277,62 +278,48 @@ fn escape_kdl_path(p: &Path) -> String {
     p.to_string_lossy().replace('\\', "\\\\")
 }
 
+/// Runtime paths and snapshot settings substituted into a layout KDL template.
+pub struct LayoutKdlParams<'a> {
+    pub chobits_bin: &'a Path,
+    pub plugin_wasm: &'a Path,
+    pub interval_secs: u64,
+    pub max_bytes: usize,
+    pub snapshot_port: u16,
+    pub live_ascii_args: &'a str,
+    pub live_ascii_bin: &'a Path,
+    pub chobits_bar_bin: &'a Path,
+}
+
 /// Build the final KDL layout, filling in runtime values:
 /// - `{chobits_bin}`          — absolute path to the chobits daemon binary
 /// - `{plugin_path}`          — absolute path to the WASM plugin
 /// - `{interval_secs}`        — polling interval from config
+/// - `{max_bytes}`            — snapshot truncation limit from config
 /// - `{live_ascii_args}`      — args for the live-ascii command
 /// - `{live_ascii_bin}`       — absolute path to the bundled live-ascii binary
 /// - `{chobits_bar_bin}`      — absolute path to the bundled chobits-bar binary
-/// - `{chobits_send_bin}`     — absolute path to the bundled chobits-send binary
-/// - `{zellij_bin}`           — absolute path to the bundled zellij binary
+/// - `{snapshot_port}`        — snapshot HTTP port from config
 ///
 /// Binaries are referenced by absolute path (rather than a bare name looked
 /// up on `$PATH`) so the generated layout works whether or not
 /// `<chobits-root>/bin/` has been added to `PATH`.
-pub fn build_layout_kdl_from(
-    template: &str,
-    chobits_bin: &Path,
-    plugin_wasm: &Path,
-    interval_secs: u64,
-    live_ascii_args: &str,
-    live_ascii_bin: &Path,
-    chobits_bar_bin: &Path,
-    chobits_send_bin: &Path,
-    zellij_bin: &Path,
-) -> String {
+pub fn build_layout_kdl_from(template: &str, params: &LayoutKdlParams<'_>) -> String {
     template
-        .replace("{chobits_bin}", &escape_kdl_path(chobits_bin))
-        .replace("{plugin_path}", &escape_kdl_path(plugin_wasm))
-        .replace("{interval_secs}", &interval_secs.to_string())
-        .replace("{live_ascii_args}", live_ascii_args)
-        .replace("{live_ascii_bin}", &escape_kdl_path(live_ascii_bin))
-        .replace("{chobits_bar_bin}", &escape_kdl_path(chobits_bar_bin))
-        .replace("{chobits_send_bin}", &escape_kdl_path(chobits_send_bin))
-        .replace("{zellij_bin}", &escape_kdl_path(zellij_bin))
+        .replace("{chobits_bin}", &escape_kdl_path(params.chobits_bin))
+        .replace("{plugin_path}", &escape_kdl_path(params.plugin_wasm))
+        .replace("{interval_secs}", &params.interval_secs.to_string())
+        .replace("{max_bytes}", &params.max_bytes.to_string())
+        .replace("{snapshot_port}", &params.snapshot_port.to_string())
+        .replace("{live_ascii_args}", params.live_ascii_args)
+        .replace("{live_ascii_bin}", &escape_kdl_path(params.live_ascii_bin))
+        .replace(
+            "{chobits_bar_bin}",
+            &escape_kdl_path(params.chobits_bar_bin),
+        )
 }
 
-pub fn build_layout_kdl(
-    chobits_bin: &Path,
-    plugin_wasm: &Path,
-    interval_secs: u64,
-    live_ascii_args: &str,
-    live_ascii_bin: &Path,
-    chobits_bar_bin: &Path,
-    chobits_send_bin: &Path,
-    zellij_bin: &Path,
-) -> String {
-    build_layout_kdl_from(
-        DEFAULT_LAYOUT_KDL,
-        chobits_bin,
-        plugin_wasm,
-        interval_secs,
-        live_ascii_args,
-        live_ascii_bin,
-        chobits_bar_bin,
-        chobits_send_bin,
-        zellij_bin,
-    )
+pub fn build_layout_kdl(params: &LayoutKdlParams<'_>) -> String {
+    build_layout_kdl_from(DEFAULT_LAYOUT_KDL, params)
 }
 
 /// Build the `args` line for live-ascii from config.
@@ -384,7 +371,7 @@ pub fn bin_dir() -> PathBuf {
 }
 
 /// `<chobits-root>/local/bin/` — directory holding bundled sibling executables
-/// (`chobits`, `chobits-bar`, `chobits-send`, `live-ascii`, `zellij`, ...)
+/// (`chobits`, `chobits-bar`, `live-ascii`, `zellij`, ...)
 /// and the `chobits-zellij.wasm` plugin.
 pub fn local_bin_dir() -> PathBuf {
     chobits_dir().join("local").join("bin")
@@ -396,7 +383,9 @@ pub fn local_bin_dir() -> PathBuf {
 /// 3. bare name, resolved via `$PATH` — fallback for `cargo run` during development
 pub fn find_executable(name: &str) -> PathBuf {
     for dir in [local_bin_dir(), bin_dir()] {
-        let with_ext = dir.join(name).with_extension(std::env::consts::EXE_EXTENSION);
+        let with_ext = dir
+            .join(name)
+            .with_extension(std::env::consts::EXE_EXTENSION);
         if with_ext.exists() {
             return with_ext;
         }
@@ -458,7 +447,7 @@ pub fn find_wasm(name: &str) -> PathBuf {
 ///
 /// The sentinel is created by `build.sh` and serves as the definitive
 /// anchor for all other paths (`config.toml`, `expressions/`, `models/`,
-/// `layout.kdl`, `local/bin/`, `logs/`).
+/// `.zellij/`, `local/bin/`, `logs/`).
 ///
 /// Result is cached in a `OnceLock` — the first call does the filesystem walk,
 /// subsequent calls return the cached `PathBuf` instantly.
@@ -575,7 +564,7 @@ impl Config {
         config.expressions.dir = resolve_config_path(&config.expressions.dir);
         config.live_ascii.model_set = resolve_config_path(&config.live_ascii.model_set);
         config.zellij.config_dir = resolve_config_path(&config.zellij.config_dir);
-        config.zellij.data_dir   = resolve_config_path(&config.zellij.data_dir);
+        config.zellij.data_dir = resolve_config_path(&config.zellij.data_dir);
         Ok(config)
     }
 
@@ -604,7 +593,7 @@ impl Config {
             },
             zellij: ZellijConfig {
                 config_dir: default_zellij_config_dir(),
-                data_dir:   default_zellij_data_dir(),
+                data_dir: default_zellij_data_dir(),
                 layout: default_layout(),
             },
             live_ascii: LiveAsciiConfig {
@@ -649,7 +638,11 @@ pub fn load_layout_from_config(config_path: &PathBuf) -> String {
                     .unwrap_or(raw.len());
                 let section = &raw[section_start..section_end];
                 for needle in &["layout = \"\"\"", "layout = '''"] {
-                    let close = if needle.contains('"') { "\"\"\"" } else { "'''" };
+                    let close = if needle.contains('"') {
+                        "\"\"\""
+                    } else {
+                        "'''"
+                    };
                     if let Some(start) = section.find(needle) {
                         let after = &section[start + needle.len()..];
                         if let Some(end) = after.find(close) {
@@ -661,5 +654,127 @@ pub fn load_layout_from_config(config_path: &PathBuf) -> String {
             DEFAULT_LAYOUT_KDL.to_string()
         }
         Err(_) => DEFAULT_LAYOUT_KDL.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_config_file(contents: &str) -> PathBuf {
+        let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "chobits-config-test-{}-{}.toml",
+            std::process::id(),
+            id
+        ));
+        std::fs::write(&path, contents).expect("write temp config");
+        path
+    }
+
+    #[test]
+    fn build_layout_kdl_from_substitutes_and_escapes_paths() {
+        let template =
+            "cmd=\"{chobits_bin}\" wasm=\"{plugin_path}\" secs={interval_secs} args={live_ascii_args}";
+        let params = LayoutKdlParams {
+            chobits_bin: Path::new(r"C:\Chobits\bin\chobits.exe"),
+            plugin_wasm: Path::new(r"C:\Chobits\local\bin\plugin.wasm"),
+            interval_secs: 15,
+            max_bytes: 4096,
+            snapshot_port: chobits_meta::DEFAULT_SNAPSHOT_PORT,
+            live_ascii_args: r#""model.json" "--camera""#,
+            live_ascii_bin: Path::new(r"C:\Chobits\local\bin\live-ascii.exe"),
+            chobits_bar_bin: Path::new(r"C:\Chobits\local\bin\chobits-bar.exe"),
+        };
+        let out = build_layout_kdl_from(template, &params);
+        assert!(out.contains(r"C:\\Chobits\\bin\\chobits.exe"));
+        assert!(out.contains(r"C:\\Chobits\\local\\bin\\plugin.wasm"));
+        assert!(out.contains("secs=15"));
+        assert!(out.contains(r#""model.json" "--camera""#));
+    }
+
+    #[test]
+    fn live_ascii_args_includes_defaults() {
+        let cfg = LiveAsciiConfig {
+            model_set: PathBuf::from("models/hiyori.model3.json"),
+            enable_osf: true,
+            enable_mouse: true,
+            enable_physics: true,
+            image_protocol: "halfblock".into(),
+            bg_color: default_bg_color(),
+            scale: default_scale(),
+            offset_x: default_offset_x(),
+            offset_y: default_offset_y(),
+        };
+        let args = live_ascii_args(&cfg);
+        assert!(args.contains(r#""models/hiyori.model3.json""#));
+        assert!(args.contains("\"--camera\""));
+        assert!(args.contains("\"--mouse\""));
+        assert!(args.contains("\"--physics\""));
+        assert!(args.contains("\"--image-protocol\""));
+        assert!(args.contains("\"halfblock\""));
+        assert!(!args.contains("--bg-color"));
+    }
+
+    #[test]
+    fn live_ascii_args_includes_optional_overrides() {
+        let cfg = LiveAsciiConfig {
+            model_set: PathBuf::from("m.json"),
+            enable_osf: false,
+            enable_mouse: false,
+            enable_physics: false,
+            image_protocol: "kitty".into(),
+            bg_color: "rgba(1,2,3,4)".into(),
+            scale: "200%".into(),
+            offset_x: "10%".into(),
+            offset_y: "20%".into(),
+        };
+        let args = live_ascii_args(&cfg);
+        assert!(!args.contains("--camera"));
+        assert!(!args.contains("--mouse"));
+        assert!(!args.contains("--physics"));
+        assert!(args.contains("\"kitty\""));
+        assert!(args.contains("\"--bg-color\""));
+        assert!(args.contains("\"rgba(1,2,3,4)\""));
+        assert!(args.contains("\"--scale\""));
+        assert!(args.contains("\"200%\""));
+        assert!(args.contains("\"--offsetx\""));
+        assert!(args.contains("\"--offsety\""));
+    }
+
+    #[test]
+    fn expand_tilde_expands_home_prefix() {
+        if let Some(home) = home_dir() {
+            assert_eq!(expand_tilde(Path::new("~/models")), home.join("models"));
+            assert_eq!(expand_tilde(Path::new("~")), home);
+        }
+    }
+
+    #[test]
+    fn load_layout_from_config_reads_zellij_section() {
+        let path = temp_config_file(
+            r#"
+[zellij]
+layout = """
+layout {
+    pane command="{chobits_bin}"
+}
+"""
+"#,
+        );
+        let layout = load_layout_from_config(&path);
+        assert!(layout.contains("pane command=\"{chobits_bin}\""));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn load_layout_from_config_falls_back_to_default() {
+        let path = temp_config_file("[llm]\nbackend = \"ollama\"\n");
+        let layout = load_layout_from_config(&path);
+        assert!(layout.contains("plugin location=\"tab-bar\""));
+        let _ = std::fs::remove_file(path);
     }
 }

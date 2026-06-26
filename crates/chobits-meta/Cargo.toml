@@ -3,3 +3,9 @@ name = "chobits-meta"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+strip-ansi-escapes = "0.2"

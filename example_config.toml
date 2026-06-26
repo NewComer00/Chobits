@@ -19,9 +19,9 @@ max_tokens = 512                               # max tokens per response
 # api_key  = "sk-..."                          # only needed for OpenAI-compatible backends
 
 [snapshot]
-port          = 7878                           # TCP — daemon receives snapshots here
+port          = 7880                           # HTTP POST /snapshot (127.0.0.1 only; plugin → daemon)
 max_bytes     = 4096                           # truncate large terminal snapshots (head + tail)
-interval_secs = 10                             # plugin dump-screen polling interval
+interval_secs = 10                             # plugin pane polling interval
 
 [persona]
 # The character's name and personality. Format instructions and the expression
@@ -36,6 +36,7 @@ You genuinely care about what the user is working on.
 [expressions]
 dir               = "expressions"              # folder containing expression .osf.bin files
 idle_timeout_secs = 30                         # seconds of silence before Chobits thinks you are not in front of the screen
+# osf_port        = 11573                      # UDP port live-ascii listens on for OSF frames
 
 [live-ascii]
 # Live2D ASCII renderer — launched in a Zellij pane by chobits-start.
@@ -54,11 +55,13 @@ offset_y       = "95%"                         # vertical offset % of panel heig
 config_dir     = ".zellij/config"
 data_dir       = ".zellij/data"
 # Zellij Layout
-# {chobits_bin}, {plugin_path}, {live_ascii_bin}, {chobits_bar_bin}, {chobits_send_bin},
-# and {zellij_bin} are filled in at launch time with absolute paths to the bundled
+# {chobits_bin}, {plugin_path}, {live_ascii_bin}, and {chobits_bar_bin}
+# are filled in at launch time with absolute paths to the bundled
 # binaries — keep them as literal placeholders.
 # {live_ascii_args} is built from the [live-ascii] section above.
-# {interval_secs} is built from the [snapshot] section above.
+# {interval_secs}, {max_bytes}, and {snapshot_port} are built from the [snapshot] section above.
+# chobits-start writes the resolved layout to .zellij/config/layouts/layout.kdl
+# and pre-grants plugin permissions (ReadApplicationState, ReadPaneContents, WebAccess).
 layout = """
 layout {
     pane size=1 borderless=true {
@@ -77,9 +80,9 @@ layout {
         }
         pane size=1 borderless=true {
             plugin location="file:{plugin_path}" {
-                zellij_bin "{zellij_bin}"
-                chobits_send_bin "{chobits_send_bin}"
+                snapshot_port "{snapshot_port}"
                 interval_secs "{interval_secs}"
+                max_bytes "{max_bytes}"
             }
         }
     }

@@ -1,13 +1,15 @@
+mod tcp;
 mod ui;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::Terminal;
 use std::io;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
@@ -19,7 +21,9 @@ async fn main() -> io::Result<()> {
         .as_ref()
         .map(|c| c.bar.port)
         .or_else(|| {
-            std::env::var("CHOBITS_BAR_PORT").ok().and_then(|v| v.parse().ok())
+            std::env::var("CHOBITS_BAR_PORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
         })
         .unwrap_or(7879);
     let history_length = config
@@ -32,16 +36,18 @@ async fn main() -> io::Result<()> {
     // Spawn TCP listener for incoming text from chobits daemon
     tokio::spawn(async move {
         let addr = format!("127.0.0.1:{}", port);
-        let listener = TcpListener::bind(&addr).await.unwrap();
+        let listener = match TcpListener::bind(&addr).await {
+            Ok(listener) => listener,
+            Err(e) => {
+                eprintln!("[chobits-bar] Failed to bind {}: {}", addr, e);
+                return;
+            }
+        };
 
         loop {
             if let Ok((mut stream, _peer)) = listener.accept().await {
-                let mut buf = String::new();
-                if stream.read_to_string(&mut buf).await.is_ok() {
-                    let text = buf.trim().to_string();
-                    if !text.is_empty() {
-                        let _ = tx.send(text);
-                    }
+                if let Ok(Some(text)) = tcp::read_message(&mut stream).await {
+                    let _ = tx.send(text);
                 }
             }
         }
@@ -69,25 +75,18 @@ async fn main() -> io::Result<()> {
         }
 
         // Draw
-        terminal
-            .draw(|frame| ui::draw(frame, &app_state))
-            .unwrap();
+        terminal.draw(|frame| ui::draw(frame, &app_state)).unwrap();
 
         if event::poll(std::time::Duration::from_millis(50)).unwrap() {
             match event::read().unwrap() {
                 Event::Key(key) => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char('c')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        break
-                    }
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                     _ => {}
                 },
                 Event::Mouse(mouse) => {
                     let scroll_lines = 3;
-                    let max_scroll =
-                        ui::max_scroll_offset(&app_state, inner_height, inner_width);
+                    let max_scroll = ui::max_scroll_offset(&app_state, inner_height, inner_width);
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
                             app_state.scroll_up(scroll_lines, max_scroll);

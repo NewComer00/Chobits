@@ -1,19 +1,28 @@
+use chobits_meta::http::{content_length_from_headers, header_body_split, is_http_post};
+use chobits_meta::snapshot::truncate_snapshot;
 use tokio::io::AsyncReadExt;
-use tokio::net::TcpListener;
 
-/// Accept incoming snapshot connections on the given TCP port.
-/// Each connection sends one text payload then closes.
+/// Extra bytes read beyond `max_bytes` before truncation (one JSON field, etc.).
+const READ_SLACK: usize = 1024;
+
+/// Accept `POST /snapshot` HTTP requests on the given localhost port.
 pub async fn listen(
     port: u16,
     max_bytes: usize,
     mut handler: impl FnMut(String),
 ) -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("127.0.0.1:{}", port);
-    let listener = TcpListener::bind(&addr).await?;
-    println!("[snapshot] Listening on {} (max {} bytes)", addr, max_bytes);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    println!(
+        "[snapshot] HTTP listening on {} (max {} bytes)",
+        addr, max_bytes
+    );
+
+    let read_cap = max_bytes.saturating_add(READ_SLACK);
+    let read_limit = read_cap as u64;
 
     loop {
-        let (mut stream, peer) = match listener.accept().await {
+        let (stream, peer) = match listener.accept().await {
             Ok(conn) => conn,
             Err(e) => {
                 eprintln!("[snapshot] Accept error: {}", e);
@@ -21,122 +30,129 @@ pub async fn listen(
             }
         };
 
-        // read_to_end loops until EOF (sender closes connection).
-        // A single read() call is not guaranteed to return the full payload.
-        let mut buf = Vec::with_capacity(max_bytes + 1024);
-        match stream.read_to_end(&mut buf).await {
-            Ok(0) => continue,
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("[snapshot] Read error from {}: {}", peer, e);
-                continue;
-            }
+        match read_http_payload(stream, read_limit).await {
+            Ok(Some(raw)) => deliver_payload(&raw, max_bytes, &mut handler),
+            Ok(None) => {}
+            Err(e) => eprintln!("[snapshot] Read error from {}: {}", peer, e),
         }
-
-        let raw = String::from_utf8_lossy(&buf).trim().to_string();
-        if raw.is_empty() {
-            continue;
-        }
-
-        let original_len = raw.len();
-        let text = truncate_snapshot(&raw, max_bytes);
-
-        if original_len > max_bytes {
-            println!(
-                "[snapshot] Truncated {} → {} bytes",
-                original_len,
-                text.len()
-            );
-        }
-
-        handler(text);
     }
 }
 
-/// Truncate snapshot to at most `max_bytes` bytes.
-///
-/// Tries to keep whole lines from the head and tail so both early and recent
-/// context survive.  If the content has very long lines (e.g. a single wrapped
-/// terminal line), falls back to a hard byte split at a UTF-8 character
-/// boundary so the budget is always reasonably filled.
-fn truncate_snapshot(raw: &str, max_bytes: usize) -> String {
-    if raw.len() <= max_bytes {
-        return raw.to_string();
+fn deliver_payload(raw: &str, max_bytes: usize, handler: &mut impl FnMut(String)) {
+    if raw.is_empty() {
+        return;
     }
 
-    let half = max_bytes / 2;
-    let head = take_head(raw, half);
-    let tail = take_tail(raw, half);
+    let original_len = raw.len();
+    let text = truncate_snapshot(raw, max_bytes);
 
-    format!(
-        "{}\n\n... [{} bytes truncated] ...\n\n{}",
-        head,
-        raw.len() - max_bytes,
-        tail
-    )
+    if original_len > max_bytes {
+        println!(
+            "[snapshot] Truncated {} → {} bytes",
+            original_len,
+            text.len()
+        );
+    }
+
+    handler(text);
 }
 
-/// Take up to `budget` bytes from the start, preferring whole lines.
-/// Falls back to a hard byte slice if no line boundary fits.
-fn take_head(s: &str, budget: usize) -> &str {
-    if s.len() <= budget {
-        return s;
+async fn read_http_payload(
+    mut stream: impl tokio::io::AsyncRead + Unpin,
+    read_limit: u64,
+) -> std::io::Result<Option<String>> {
+    let mut peek = vec![0u8; 512];
+    let n = stream.read(&mut peek).await?;
+    if n == 0 {
+        return Ok(None);
+    }
+    peek.truncate(n);
+
+    if !is_http_post(&peek) {
+        return Ok(None);
     }
 
-    // Walk lines, stop before exceeding budget.
-    let mut end = 0;
-    for line in s.lines() {
-        let next = end + line.len() + 1; // +1 for '\n'
-        if next > budget {
+    let mut body = read_http_body(&mut stream, &peek, read_limit).await?;
+    if body.len() as u64 > read_limit {
+        body.truncate(read_limit as usize);
+    }
+
+    let text = String::from_utf8_lossy(&body).trim().to_string();
+    Ok(if text.is_empty() { None } else { Some(text) })
+}
+
+async fn read_http_body(
+    stream: &mut (impl tokio::io::AsyncRead + Unpin),
+    initial: &[u8],
+    read_limit: u64,
+) -> std::io::Result<Vec<u8>> {
+    let mut buf = initial.to_vec();
+    while header_body_split(&buf).is_none() {
+        if buf.len() as u64 >= read_limit {
             break;
         }
-        end = next;
-    }
-
-    if end > 0 {
-        // Trim the trailing newline we counted but didn't verify is there.
-        s[..end].trim_end_matches('\n')
-    } else {
-        // Single line longer than budget: hard slice at char boundary.
-        let boundary = floor_char_boundary(s, budget);
-        &s[..boundary]
-    }
-}
-
-/// Take up to `budget` bytes from the end, preferring whole lines.
-/// Falls back to a hard byte slice if no line boundary fits.
-fn take_tail(s: &str, budget: usize) -> &str {
-    if s.len() <= budget {
-        return s;
-    }
-
-    let mut start = s.len();
-    for line in s.lines().rev() {
-        let prev = start.saturating_sub(line.len() + 1);
-        if s.len() - prev > budget {
+        let mut chunk = vec![0u8; 1024];
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
             break;
         }
-        start = prev;
+        chunk.truncate(n);
+        buf.extend_from_slice(&chunk);
     }
 
-    if start < s.len() {
-        s[start..].trim_start_matches('\n')
-    } else {
-        // Single line longer than budget: hard slice at char boundary.
-        let from = s.len() - budget;
-        let boundary = ceil_char_boundary(s, from);
-        &s[boundary..]
+    let Some(body_start) = header_body_split(&buf) else {
+        return Ok(Vec::new());
+    };
+
+    let headers_end = body_start.saturating_sub(4);
+    let content_len = content_length_from_headers(&buf[..headers_end])
+        .unwrap_or(0)
+        .min(read_limit as usize);
+
+    let mut body = buf[body_start..].to_vec();
+    while body.len() < content_len && (body.len() as u64) < read_limit {
+        let mut chunk = vec![0u8; content_len.saturating_sub(body.len()).min(4096)];
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            break;
+        }
+        chunk.truncate(n);
+        body.extend_from_slice(&chunk);
     }
+    body.truncate(content_len);
+    Ok(body)
 }
 
-/// Largest char boundary ≤ index.
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    let index = index.min(s.len());
-    (0..=index).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
 
-/// Smallest char boundary ≥ index.
-fn ceil_char_boundary(s: &str, index: usize) -> usize {
-    let index = index.min(s.len());
-    (index..=s.len()).find(|&i| s.is_char_boundary(i)).unwrap_or(s.len())
+    #[tokio::test]
+    async fn accepts_http_post_body() {
+        let (mut client, server) = tokio::io::duplex(4096);
+        let req = b"POST /snapshot HTTP/1.1\r\nContent-Length: 11\r\n\r\nhello world";
+        client.write_all(req).await.unwrap();
+        client.shutdown().await.unwrap();
+        let payload = read_http_payload(server, 4096).await.unwrap();
+        assert_eq!(payload.as_deref(), Some("hello world"));
+    }
+
+    #[tokio::test]
+    async fn ignores_non_http_traffic() {
+        let (mut client, server) = tokio::io::duplex(4096);
+        client.write_all(b"{\"screen\":\"hi\"}").await.unwrap();
+        client.shutdown().await.unwrap();
+        let payload = read_http_payload(server, 4096).await.unwrap();
+        assert_eq!(payload, None);
+    }
+
+    #[test]
+    fn truncate_output_within_max_bytes() {
+        use chobits_meta::snapshot::truncate_snapshot as truncate;
+        let s = "x\n".repeat(5000);
+        let max = 4096;
+        let out = truncate(&s, max);
+        assert!(out.len() <= max);
+    }
 }

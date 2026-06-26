@@ -1,0 +1,4 @@
+[alias]
+# chobits-zellij is WASM-only; native tests cannot link Zellij host symbols.
+test-all = "test --workspace --exclude chobits-zellij"
+clippy-all = "clippy --workspace --exclude chobits-zellij --all-targets -- -D warnings"

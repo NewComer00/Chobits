@@ -129,7 +129,7 @@ need "$BIN" "chobits-start" "chobits-start" "$force_chobits" \
     cargo install $LOCK_FLAG --force --path "crates/chobits-start" --root "$DEST"
 
 # chobits sibling binaries → local/bin/
-for c in "" "-send" "-bar"; do
+for c in "" "-bar"; do
     need "$LOCAL_BIN" "chobits${c}" "chobits${c}" "$force_chobits" \
         cargo install $LOCK_FLAG --force --path "crates/chobits${c}" --root "$DEST/local"
 done

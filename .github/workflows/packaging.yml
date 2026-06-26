@@ -1,0 +1,189 @@
+name: Packaging
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build (Linux)
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          lfs: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq wget unzip make gcc
+
+      - name: Install Rust targets
+        run: rustup target add wasm32-wasip1
+
+      - name: Install cargo-binstall
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.tgz \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
+          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: ./build.sh --locked -y
+
+      - name: Get target triple and archive
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          cd install
+          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.tar.gz
+
+  build-windows:
+    name: Build (Windows / MSYS2 UCRT64)
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          lfs: true
+
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-git
+            mingw-w64-ucrt-x86_64-git-lfs
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-rust-wasm
+            mingw-w64-ucrt-x86_64-jq
+            mingw-w64-ucrt-x86_64-wget
+            mingw-w64-ucrt-x86_64-gcc
+            unzip
+            make
+
+      - name: Install cargo-binstall
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.zip \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip
+          unzip -o /tmp/cargo-binstall.zip -d /tmp/cargo-binstall
+          install -m 755 /tmp/cargo-binstall/cargo-binstall.exe "$HOME/.cargo/bin/cargo-binstall.exe"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: ./build.sh --locked -y
+
+      - name: Get target triple
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+
+      - name: Archive
+        shell: pwsh
+        run: Compress-Archive -Path install/Chobits -DestinationPath "Chobits-$env:TARGET.zip"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.zip
+
+  build-alpine:
+    name: Build (Alpine Linux)
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install checkout dependencies
+        run: apk add --no-cache git git-lfs
+
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          lfs: true
+
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache rustup bash jq wget unzip make gcc musl-dev
+
+      - name: Install Rust toolchain
+        run: |
+          rustup-init -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Rust targets
+        shell: bash
+        run: rustup target add wasm32-wasip1
+
+      - name: Install cargo-binstall
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          wget -qO /tmp/cargo-binstall.tgz \
+            https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xzf /tmp/cargo-binstall.tgz -C /tmp
+          install -m 755 /tmp/cargo-binstall "$HOME/.cargo/bin/cargo-binstall"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        shell: bash
+        run: ./build.sh --locked -y
+
+      - name: Get target triple and archive
+        shell: bash
+        run: |
+          TARGET=$(rustc -vV | grep host | awk '{print $2}')
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          cd install
+          tar -czf ../Chobits-${TARGET}.tar.gz Chobits/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.TARGET }}
+          path: Chobits-${{ env.TARGET }}.tar.gz
+
+  release:
+    name: Create Release
+    needs: [build-linux, build-windows, build-alpine]
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          merge-multiple: true
+
+      - name: Verify release artifacts
+        run: |
+          ls -la Chobits-*
+          count=$(ls -1 Chobits-* | wc -l)
+          test "$count" -eq 3
+          test $(ls -1 Chobits-*.tar.gz | wc -l) -eq 2
+          test $(ls -1 Chobits-*.zip | wc -l) -eq 1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.event.workflow_run.head_branch }}
+          files: Chobits-*
+          generate_release_notes: true

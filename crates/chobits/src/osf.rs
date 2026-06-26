@@ -15,6 +15,7 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use std::time::Duration;
+//! use chobits::osf::OsfPlayer;
 //! use tokio::net::UdpSocket;
 //! use tokio::sync::oneshot;
 //!
@@ -210,5 +211,185 @@ impl OsfPlayer {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempExpressionsDir(PathBuf);
+
+    impl TempExpressionsDir {
+        fn new() -> Self {
+            let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "chobits-osf-test-{}-{}",
+                std::process::id(),
+                id
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp expressions dir");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn write_expression(&self, name: &str, frame_count: usize) {
+            let mut data = vec![0u8; FRAME_LEN * frame_count];
+            for f in 0..frame_count {
+                data[f * FRAME_LEN] = f as u8;
+            }
+            std::fs::write(self.0.join(format!("{name}.osf.bin")), data)
+                .expect("write expression file");
+        }
+    }
+
+    impl Drop for TempExpressionsDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    async fn test_udp_pair() -> (Arc<UdpSocket>, UdpSocket, u16) {
+        let recv = UdpSocket::bind("127.0.0.1:0").await.expect("bind recv");
+        let port = recv.local_addr().expect("recv addr").port();
+        let send = Arc::new(UdpSocket::bind("127.0.0.1:0").await.expect("bind send"));
+        send.connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("connect send");
+        (send, recv, port)
+    }
+
+    #[test]
+    fn read_frames_parses_exact_chunks() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("sample", 3);
+        let path = dir.path().join("sample.osf.bin");
+        let frames = OsfPlayer::read_frames(&path);
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0][0], 0);
+        assert_eq!(frames[2][0], 2);
+    }
+
+    #[test]
+    fn read_frames_drops_trailing_partial_frame() {
+        let dir = TempExpressionsDir::new();
+        let path = dir.path().join("partial.osf.bin");
+        let mut data = vec![0u8; FRAME_LEN + 10];
+        data[0] = 42;
+        std::fs::write(&path, data).unwrap();
+        let frames = OsfPlayer::read_frames(&path);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0][0], 42);
+    }
+
+    #[test]
+    fn new_errors_when_directory_missing() {
+        let dir = std::env::temp_dir().join("chobits-osf-missing-dir-never-create-this");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let sock = rt.block_on(async { Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()) });
+        let result = OsfPlayer::new(&dir, "neutral", sock);
+        assert!(result.is_err(), "expected missing directory error");
+        let err = result.err().expect("error string");
+        assert!(err.contains("does not exist"));
+    }
+
+    #[test]
+    fn new_errors_when_fallback_missing() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("happy", 1);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let sock = rt.block_on(async { Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()) });
+        let result = OsfPlayer::new(dir.path(), "neutral", sock);
+        assert!(result.is_err(), "expected missing fallback error");
+        let err = result.err().expect("error string");
+        assert!(err.contains("Fallback expression file does not exist"));
+    }
+
+    #[test]
+    fn new_lists_expressions_sorted() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("zebra", 1);
+        dir.write_expression("alpha", 1);
+        dir.write_expression("neutral", 1);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let sock = rt.block_on(async { Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()) });
+        let player = OsfPlayer::new(dir.path(), "neutral", sock).unwrap();
+        assert_eq!(
+            player.get_available_expressions(),
+            vec!["alpha", "neutral", "zebra"]
+        );
+    }
+
+    #[tokio::test]
+    async fn play_sends_all_frames_once() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("neutral", 1);
+        dir.write_expression("happy", 2);
+
+        let (send, recv, _) = test_udp_pair().await;
+        let player = OsfPlayer::new(dir.path(), "neutral", send).unwrap();
+
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let recv_task = tokio::spawn(async move {
+            let mut buf = [0u8; FRAME_LEN];
+            recv.recv(&mut buf).await.expect("frame 0");
+            assert_eq!(buf[0], 0);
+            recv.recv(&mut buf).await.expect("frame 1");
+            assert_eq!(buf[0], 1);
+            let _ = cancel_tx.send(());
+        });
+
+        player.play("happy", cancel_rx).await;
+        recv_task.await.expect("recv task");
+    }
+
+    #[tokio::test]
+    async fn play_falls_back_to_neutral_for_unknown_expression() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("neutral", 1);
+
+        let (send, recv, _) = test_udp_pair().await;
+        let player = OsfPlayer::new(dir.path(), "neutral", send).unwrap();
+
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let recv_task = tokio::spawn(async move {
+            let mut buf = [0u8; FRAME_LEN];
+            recv.recv(&mut buf).await.expect("neutral frame");
+            assert_eq!(buf[0], 0);
+            let _ = cancel_tx.send(());
+        });
+
+        player.play("missing", cancel_rx).await;
+        recv_task.await.expect("recv task");
+    }
+
+    #[tokio::test]
+    async fn play_looping_repeats_until_cancel() {
+        let dir = TempExpressionsDir::new();
+        dir.write_expression("neutral", 1);
+
+        let (send, recv, _) = test_udp_pair().await;
+        let player = OsfPlayer::new(dir.path(), "neutral", send).unwrap();
+
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let recv_task = tokio::spawn(async move {
+            let mut buf = [0u8; FRAME_LEN];
+            for _ in 0..3 {
+                recv.recv(&mut buf).await.expect("looped frame");
+                assert_eq!(buf[0], 0);
+            }
+            let _ = cancel_tx.send(());
+        });
+
+        player.play_looping("neutral", cancel_rx).await;
+        recv_task.await.expect("recv task");
     }
 }

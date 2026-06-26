@@ -6,12 +6,12 @@ mod snapshot;
 
 use config::Config;
 use osf::OsfPlayer;
+use rand::seq::IndexedRandom;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot, Mutex};
-use rand::seq::IndexedRandom;
 
 static QUIET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -33,9 +33,9 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1);
     let mut quiet = false;
-    while let Some(arg) = args.next() {
+    for arg in args {
         match arg.as_str() {
             "--quiet" | "-q" => quiet = true,
             _ => {}
@@ -52,14 +52,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  snapshot port: {}", config.snapshot.port);
         println!("  bar port:      {}", config.bar.port);
         println!("  osf port:      {}", config.expressions.osf_port);
-        println!("  llm backend:   {} ({})", config.llm.backend, config.llm.model);
+        println!(
+            "  llm backend:   {} ({})",
+            config.llm.backend, config.llm.model
+        );
     }
 
-    let _gag_stdout = if quiet { Some(gag::Gag::stdout()?) } else { None::<gag::Gag> };
-    let _gag_stderr = if quiet { Some(gag::Gag::stderr()?) } else { None::<gag::Gag> };
+    let _gag_stdout = if quiet {
+        Some(gag::Gag::stdout()?)
+    } else {
+        None::<gag::Gag>
+    };
+    let _gag_stderr = if quiet {
+        Some(gag::Gag::stderr()?)
+    } else {
+        None::<gag::Gag>
+    };
 
     let osf_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await?);
-    osf_socket.connect(format!("127.0.0.1:{}", config.expressions.osf_port)).await?;
+    osf_socket
+        .connect(format!("127.0.0.1:{}", config.expressions.osf_port))
+        .await?;
 
     let osf_player = OsfPlayer::new(config.expressions.dir.clone(), "neutral", osf_socket)?;
 
@@ -105,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (unchanged_for, screen_changed) = {
             let mut hist = state.history.lock().await;
-            let changed = hist.back().map_or(true, |e| e.content != snapshot_text);
+            let changed = hist.back().is_none_or(|e| e.content != snapshot_text);
 
             hist.push_back(SnapshotEntry {
                 content: snapshot_text.clone(),
@@ -186,10 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
 
             let parsed = match response {
-                Some(raw) => llm::parse_response(&raw).unwrap_or_else(|| llm::LlmResponse {
-                    text: "hmm?".into(),
-                    expression: "neutral".into(),
-                }),
+                Some(raw) => llm::parse_response(&raw).expect("parse_response always returns Some"),
                 None => llm::LlmResponse {
                     text: "...".into(),
                     expression: "neutral".into(),
@@ -260,7 +270,12 @@ async fn start_monologue_if_needed(state: &Arc<AppState>) {
                 break;
             }
 
-            let expressions = state.osf_player.get_available_expressions();
+            let expressions: Vec<String> = state
+                .osf_player
+                .get_available_expressions()
+                .into_iter()
+                .filter(|n| n != "neutral")
+                .collect();
             let name = match expressions.choose(&mut rand::rng()) {
                 Some(n) => n.clone(),
                 None => break,

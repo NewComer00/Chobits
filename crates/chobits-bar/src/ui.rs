@@ -67,10 +67,7 @@ impl AppState {
 
 fn message_height(text: &str, width: usize) -> u16 {
     let width = width.max(1);
-    let wrap_lines: usize = text
-        .split('\n')
-        .map(|l| (l.len() + width - 1) / width)
-        .sum();
+    let wrap_lines: usize = text.split('\n').map(|l| l.len().div_ceil(width)).sum();
     wrap_lines.max(1) as u16
 }
 
@@ -169,4 +166,83 @@ fn fade(position: usize, age_secs: f64) -> Color {
     let factor = pos_factor * time_factor;
     let v = (255.0 * factor) as u8;
     Color::Rgb(v, v, v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_height_counts_wrapped_lines() {
+        assert_eq!(message_height("hello", 10), 1);
+        assert_eq!(message_height("12345678901", 10), 2);
+        assert_eq!(message_height("a\nbbb", 2), 3);
+    }
+
+    #[test]
+    fn max_scroll_offset_zero_when_content_fits() {
+        let mut state = AppState::new(10);
+        state.messages.push_back(Message {
+            text: "hi".into(),
+            timestamp: Instant::now(),
+        });
+        assert_eq!(max_scroll_offset(&state, 5, 20), 0);
+    }
+
+    #[test]
+    fn push_at_bottom_keeps_scroll_at_zero() {
+        let mut state = AppState::new(10);
+        state.push("first".into(), 5, 20);
+        state.push("second".into(), 5, 20);
+        assert_eq!(state.scroll_offset, 0);
+        assert_eq!(state.messages.len(), 2);
+    }
+
+    #[test]
+    fn push_while_scrolled_up_increases_offset() {
+        let mut state = AppState::new(10);
+        state.push("first".into(), 2, 5);
+        state.scroll_up(1, 10);
+        assert!(state.scroll_offset > 0);
+        let before = state.scroll_offset;
+        state.push("second".into(), 2, 5);
+        assert!(state.scroll_offset >= before);
+    }
+
+    #[test]
+    fn push_evicts_oldest_at_history_limit() {
+        let mut state = AppState::new(2);
+        state.push("one".into(), 5, 20);
+        state.push("two".into(), 5, 20);
+        state.push("three".into(), 5, 20);
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages.front().unwrap().text, "two");
+        assert_eq!(state.messages.back().unwrap().text, "three");
+    }
+
+    #[test]
+    fn scroll_up_and_down_clamp() {
+        let mut state = AppState::new(10);
+        state.push("line".into(), 2, 5);
+        state.scroll_up(99, 1);
+        assert_eq!(state.scroll_offset, 1);
+        state.scroll_down(99);
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn fade_newest_is_brightest() {
+        match (fade(0, 0.0), fade(3, 0.0)) {
+            (Color::Rgb(n0, _, _), Color::Rgb(n3, _, _)) => assert!(n0 > n3),
+            _ => panic!("expected Rgb colors"),
+        }
+    }
+
+    #[test]
+    fn fade_older_messages_dim_with_age() {
+        match (fade(1, 10.0), fade(1, 40.0)) {
+            (Color::Rgb(young, _, _), Color::Rgb(old, _, _)) => assert!(young > old),
+            _ => panic!("expected Rgb colors"),
+        }
+    }
 }
