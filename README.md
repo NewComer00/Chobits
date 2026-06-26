@@ -1,44 +1,63 @@
 # Chobits
 
-A cross-platform Live2D terminal companion living inside Zellij driven by LLM.
+<p align="left">
+  <a href="README.md"><img src="https://img.shields.io/badge/语言-简体中文-red.svg"></a>
+  <a href="README.en.md"><img src="https://img.shields.io/badge/lang-English-blue.svg"></a>
+</p>
+
+一个住在 Zellij 终端里、由 LLM 驱动的跨平台 Live2D 终端桌宠。
 
 <img width="1917" height="967" alt="image" src="https://github.com/user-attachments/assets/254a2289-e404-48a2-b47b-63852bd28a78" />
 
-## Supported Platforms
+## 支持平台
 
 - Linux
-- macOS
+- macOS†
 - Windows*
 
-> \* **Building** on Windows requires MSYS2 UCRT64 or MINGW64. **Pre-built release archives** run on native Windows without MSYS2.
+> † 针对 macOS 发布的[预编译二进制文件]((https://github.com/NewComer00/Chobits/releases))未经过 Apple 公证，可能被 Gatekeeper 拦截。你可以选择[从源码构建](#从源码构建)，或按照 [Apple 官方说明](https://support.apple.com/zh-cn/102445)手动放行。
 
-## Quick Start
+> \* 在 Windows 上编译需要 MSYS2 UCRT64 或 MINGW64。编译生成的二进制文件可直接在原生 Windows 上运行，无需 MSYS2。
 
-Install the latest release with one command. The installer adds `chobits-start` to your user PATH and prints `[llm]` examples for `config.toml`.
+## 快速开始
 
-### Install on Linux / macOS
+您可以通过以下命令安装[最新版本](https://github.com/NewComer00/Chobits/releases/latest)的 Chobits。安装器会自动将 `chobits-start` 命令加入用户 PATH，并在终端打印 `config.toml` 的 `[llm]` 配置示例。
 
-Requires Bash or Zsh. Default install location: `~/.local/share/Chobits`.
+### Linux 安装
+
+需要 Bash 或 Zsh。默认安装位置：`~/.local/share/Chobits`。
 
 ```bash
 . <(curl -LsSf https://raw.githubusercontent.com/NewComer00/Chobits/main/scripts/install.sh)
 ```
 
-### Install on Windows
+### macOS 安装
 
-Requires PowerShell 5.1+. Default install location: `%LOCALAPPDATA%\Chobits`.
+需要 Bash 或 Zsh。默认安装位置：`~/.local/share/Chobits`。
+
+安装完成后请重新打开终端，PATH 修改才会生效。
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/NewComer00/Chobits/main/scripts/install.sh | sh
+```
+
+Chobits 的相关命令可能被 Gatekeeper 拦截（提示 `operation not permitted`），请按照 [Apple 官方说明](https://support.apple.com/zh-cn/102445)手动放行。
+
+### Windows 安装
+
+需要 PowerShell 5.1 及以上版本。默认安装位置：`%LOCALAPPDATA%\Chobits`。
 
 ```powershell
 irm https://raw.githubusercontent.com/NewComer00/Chobits/main/scripts/install.ps1 | iex
 ```
 
-### Configure LLM Backend
+### 配置 LLM 后端
 
-Edit `config.toml` before your first run — by default at `~/.local/share/Chobits/config.toml` (Linux) or `%LOCALAPPDATA%\Chobits\config.toml` (Windows).
+首次运行前，请先编辑 `config.toml`。默认路径为 `~/.local/share/Chobits/config.toml`（Linux / macOS）或 `%LOCALAPPDATA%\Chobits\config.toml`（Windows）。
 
-Find the `[llm]` section in the config. Chobits supports the following LLM backends
+找到配置文件中的 `[llm]` 部分，Chobits 支持以下 LLM 后端：
 
-**Ollama**
+**Ollama（本地推理）**
 
 ```toml
 [llm]
@@ -48,7 +67,7 @@ model      = "qwen3:0.6b"
 max_tokens = 512
 ```
 
-**OpenAI-compatible** (specify anything other than `ollama` at `backend` field)
+**OpenAI 兼容接口**（`backend` 填写除 `ollama` 以外的任意值）
 
 ```toml
 [llm]
@@ -59,186 +78,184 @@ max_tokens = 512
 api_key    = "sk-..."
 ```
 
-🎉 You're all set! Just run `chobits-start` to launch Chobits. 🚀
+🎉 至此一切就绪，执行 `chobits-start` 命令即可启动 Chobits！🚀
 
 > [!TIP]
-> `chobits-start` creates or re-attaches to a dedicated Zellij session — the daemon, live-ascii, bar, and plugin all run inside it, separate from your normal terminal sessions.
+> `chobits-start` 会 创建 或 重新连接 一个专属的 Zellij 会话。其中，守护进程、live-ascii、状态栏和插件都运行在这个独立会话中，与你的日常终端会话互不干扰。
 >
-> - **First launch** — a new session is created automatically.
-> - **Later runs** — `chobits-start` re-attaches to the existing session (you pick one if several are open).
-> - **Detach** without stopping — press `Ctrl+o` then `d` in Zellij; run `chobits-start` again to come back.
-> - **Quit entirely** — press `Ctrl+q` or close all panes.
+> - **首次启动**：第一次启动 `chobits-start` 时，程序将自动创建新的 Zellij 会话。
+> - **临时离开**：在 Zellij 中按 `Ctrl+o` 再按 `d`，可暂时离开会话（内部进程切入后台运行，此时 LLM 不再消耗 token）。下次运行 `chobits-start` 时将重新连接会话。
+> - **重新连接**：`chobits-start` 会自动重连已有会话（存在多个时会提示选择）。
+> - **彻底退出**：按 `Ctrl+q` 彻底关闭当前会话，结束会话中的所有进程。您也可以通过 手动关闭会话里的所有面板 来结束会话。
 >
-> See [Run](#run) for subcommands and session management.
+> 更多子命令和会话管理详见[运行](#运行)章节。
 
-For manual installs, see [Download from Release](#download-from-release) or [Build from Source](#build-from-source). For all settings, see [Configuration](#configuration).
+手动安装请参考[从发行版下载](#从发行版下载)或[从源码构建](#从源码构建)。完整配置项说明见[配置](#配置)章节。
 
 <details>
-<summary>Click to expand more installer options</summary>
+<summary>展开：更多安装选项</summary>
 
-### Installer options
+### 安装器环境变量
 
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `CHOBITS_INSTALL_DIR` | `~/.local/share/Chobits` / `%LOCALAPPDATA%\Chobits` | Install location |
-| `CHOBITS_VERSION` | `latest` | Release tag (e.g. `v0.2.0`) |
-| `CHOBITS_LIBC` | `musl` | Linux only: `musl` or `gnu` |
-| `CHOBITS_NO_MODIFY_PATH` | (unset) | Set to `1` to skip adding `bin/` to user PATH |
+| 变量 | 默认值 | 说明 |
+| ---- | ------ | ---- |
+| `CHOBITS_INSTALL_DIR` | `~/.local/share/Chobits` / `%LOCALAPPDATA%\Chobits` | 安装目录 |
+| `CHOBITS_VERSION` | `latest` | 指定发行版标签（如 `v0.2.0`） |
+| `CHOBITS_LIBC` | `musl` | 仅 Linux：`musl` 或 `gnu` |
+| `CHOBITS_NO_MODIFY_PATH` | （未设置） | 设为 `1` 跳过 PATH 修改 |
 
 </details>
 
-## Download from Release
+## 从发行版下载
 
 <details>
-<summary>Click to expand</summary>
+<summary>展开</summary>
 
 > [!NOTE]
-> The release package includes a free model ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) downloaded from [Cubism](https://www.live2d.com/en/learn/sample/).
-> 
-> Before using this model, please review the ["Free Material License Agreement"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) and the ["Live2D Cubism Sample Data Terms of Use"](https://www.live2d.com/learn/sample/model-terms/).
+> 发行包内含从 [Cubism](https://www.live2d.com/en/learn/sample/) 下载的免费模型 ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/)。
+>
+> 使用前请阅读 ["免费素材许可协议"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) 和 ["Live2D Cubism 示例数据使用条款"](https://www.live2d.com/learn/sample/model-terms/)。
 
-Pre-built binaries are available on the [Releases](https://github.com/NewComer00/Chobits/releases) page for the following platforms:
+[Releases](https://github.com/NewComer00/Chobits/releases) 页面提供以下平台的预编译二进制文件：
 
-|                  Package                   |    Platform    |                      Notes                      |
-| ------------------------------------------ | -------------- | ----------------------------------------------- |
-| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux   | Standard glibc-linked build                     |
-| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux   | Lightweight, static-linked musl build           |
-| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows | Runs on native Windows; no MSYS2 required   |
+|                  包名                      |    平台         |                      说明                       |
+| ------------------------------------------ | --------------- | ----------------------------------------------- |
+| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux    | 标准 glibc 动态链接构建                          |
+| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux    | 轻量级 musl 静态链接构建，兼容性更广             |
+| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows  | 原生 Windows 可直接运行，无需 MSYS2             |
 
-Download and extract the archive for your platform:
+下载并解压对应平台的压缩包：
 
 ### Linux
 
-To install Chobits on Linux, first download the latest static MUSL build and extract it:
+推荐使用静态 musl 构建，兼容绝大多数 Linux 发行版：
 
 ```bash
 wget https://github.com/NewComer00/Chobits/releases/latest/download/Chobits-x86_64-unknown-linux-musl.tar.gz
 tar -xzf Chobits-x86_64-unknown-linux-musl.tar.gz
 ```
 
-The static MUSL build (`Chobits-x86_64-unknown-linux-musl.tar.gz`) is recommended for broad compatibility across most Linux distributions. If you are on a glibc-based system, you may alternatively use `Chobits-x86_64-unknown-linux-gnu.tar.gz`.
+如果你使用的是基于 glibc 的系统，也可以选择 `Chobits-x86_64-unknown-linux-gnu.tar.gz`。
 
 ### Windows
-
-Download the latest Windows release:
 
 ```powershell
 Invoke-WebRequest -Uri "https://github.com/NewComer00/Chobits/releases/latest/download/Chobits-x86_64-pc-windows-gnu.zip" -OutFile "Chobits-x86_64-pc-windows-gnu.zip"
 Expand-Archive -Path "Chobits-x86_64-pc-windows-gnu.zip" -DestinationPath .
 ```
 
-This will extract a `Chobits/` directory containing all necessary files. You can move the `Chobits` folder anywhere you prefer.
+解压后会得到一个 `Chobits/` 目录，包含所有必要文件。你可以将 `Chobits` 文件夹移到任意位置。
 
-To proceed, continue with the [Deployment](#deployment) instructions.
+完成后请继续阅读[部署](#部署)章节。
 
 </details>
 
-## Build from Source
+## 从源码构建
 
 <details>
-<summary>Click to expand</summary>
+<summary>展开</summary>
 
-### Prerequisites
+### 前置依赖
 
-| Tool           | Description                                                                           |
+| 工具           | 说明                                                                                  |
 |----------------|---------------------------------------------------------------------------------------|
-| git            | Version control system to clone the repository.                                       |
-| git-lfs        | Git extension for handling large files. Install it with: \`git lfs install\`.         |
-| cargo          | Rust toolchain with native and 'wasm32-wasip1' targets.                               |
-| cargo-binstall | For easier installation of Zellij. Install it with: \`cargo install cargo-binstall\`. |
-| jq             | JSON processor.                                                                       |
-| wget           | HTTP downloader.                                                                      |
-| unzip          | ZIP extractor.                                                                        |
-| make           | GNU Make (for live-ascii).                                                            |
-| cc             | C toolchain (for live-ascii).                                                         |
+| git            | 版本控制，用于克隆仓库。                                                              |
+| git-lfs        | Git 大文件扩展。安装后执行 `git lfs install`。                                        |
+| cargo          | Rust 工具链，需包含 native 和 `wasm32-wasip1` 目标。                                  |
+| cargo-binstall | 用于快速安装 Zellij。可通过 `cargo install cargo-binstall` 安装。                     |
+| jq             | JSON 处理工具。                                                                       |
+| wget           | HTTP 下载工具。                                                                       |
+| unzip          | ZIP 解压工具。                                                                        |
+| make           | GNU Make（live-ascii 构建需要）。                                                     |
+| cc             | C 工具链（live-ascii 构建需要）。                                                     |
 
-For MSYS2 UCRT64/MINGW64 users, you can install these tools with:
+MSYS2 UCRT64/MINGW64 用户可通过以下命令一键安装：
 
-``` bash
+```bash
 pacman -S ${MINGW_PACKAGE_PREFIX}-{git,git-lfs,rust,rust-wasm,jq,wget,gcc} unzip make
-cargo install cargo-binstall  # This may take a while to compile
+cargo install cargo-binstall  # 首次编译可能需要一些时间
 ```
 
-### Automated Build
+### 自动构建
 
 ```bash
 git lfs install
 git clone --depth 1 https://github.com/NewComer00/Chobits.git
 cd Chobits
-# git checkout v0.2.0   # optional: match a release tag
+# git checkout v0.2.0   # 可选：切换到指定发行版标签
 ./scripts/build.sh --locked -y
 ```
 
-### Manual Build
+### 手动构建
 
 <details>
-<summary>Click to expand manual build instructions</summary>
+<summary>展开手动构建步骤</summary>
 
-Create the local directory `install/Chobits/` to hold all binaries, configurations, Live2D models and expressions:
+创建本地目录 `install/Chobits/`，用于存放所有二进制文件、配置、Live2D 模型和表情：
 
 ```bash
 mkdir -p install/Chobits
 ```
 
-#### Entrypoint Binaries
+#### 入口二进制文件
 
-Install the entrypoint executable `chobits-start` to the directory `install/Chobits/bin/`:
+将入口程序 `chobits-start` 安装到 `install/Chobits/bin/`：
 
 ```bash
 cargo install --path "crates/chobits-start" --root install/Chobits
 ```
 
-#### Local Binaries
+#### 本地二进制文件
 
-Install other binaries to the directory `install/Chobits/local/bin/`:
+将其余二进制文件安装到 `install/Chobits/local/bin/`：
 
 ```bash
 for c in "" "-bar"; do cargo install --path "crates/chobits$c" --root install/Chobits/local; done
 cargo install --path crates/chobits-zellij --root install/Chobits/local --target wasm32-wasip1
 ```
 
-The `chobits` and `chobits-bar` binaries and the WASM plugin (`chobits-zellij.wasm`) should now be in `install/Chobits/local/bin/`.
+`chobits`、`chobits-bar` 二进制文件和 WASM 插件（`chobits-zellij.wasm`）将出现在 `install/Chobits/local/bin/`。
 
-Then install dependencies (e.g. `live-ascii` and `zellij`) according to their instructions. For convenience, just install them into the same `install/Chobits/local/bin/` directory to keep everything self-contained.
+接着按照各自说明安装依赖（如 `live-ascii` 和 `zellij`）。建议统一安装到 `install/Chobits/local/bin/` 以保持目录整洁。
 
-Install `live-ascii` from source, GNU Make (`make`) and C toolchain (`cc`) required:
+从源码安装 `live-ascii`（需要 GNU Make 和 C 工具链）：
 
 ```bash
 cargo install --git https://github.com/NewComer00/live-ascii --root install/Chobits/local
 ```
 
-Install `zellij` from source or get the latest release binary with `cargo-binstall` tool:
+安装 `zellij`（从源码编译或使用 `cargo-binstall` 获取预编译二进制）：
 
 ```bash
-# Get the version of zellij from Cargo.toml to ensure compatibility with the plugin
+# 从 Cargo.toml 读取版本号，确保与插件兼容
 ZELLIJ_VER=$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "zellij-tile") | .version')
 
-# Install zellij from source:
+# 从源码编译：
 cargo install zellij --version ${ZELLIJ_VER} --root install/Chobits/local
 
-# or get the latest release binary with `cargo-binstall` tool:
+# 或使用 cargo-binstall 获取预编译二进制：
 # cargo binstall zellij@${ZELLIJ_VER} --root install/Chobits/local
 
-# For MSYS2 UCRT64/MINGW64 users, the simplest way is to download the pre-built binary from GitHub releases:
+# MSYS2 UCRT64/MINGW64 用户也可直接从 GitHub Releases 下载预编译二进制：
 # wget https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VER}/zellij-x86_64-pc-windows-msvc.zip
 # unzip zellij-x86_64-pc-windows-msvc.zip -d install/Chobits/local/bin
 ```
 
-Now you should have `live-ascii` and `zellij` binaries in `install/Chobits/local/bin/` as well.
+完成后 `install/Chobits/local/bin/` 中应同时包含 `live-ascii` 和 `zellij`。
 
-#### Expressions
+#### 表情文件
 
-Place the pre-recorded expressions (OSF binary dumps) in `install/Chobits/expressions/`:
+将预录表情（OSF 二进制文件）复制到 `install/Chobits/expressions/`：
 
 ```bash
 cp -r expressions install/Chobits/
 ```
 
-#### Live2D Models
+#### Live2D 模型
 
-Download the Live2D model of your choice and place the `.model3.json` file somewhere accessible.  Note the path for the next step.
+下载你喜欢的 Live2D 模型，将 `.model3.json` 文件放到可访问的位置，记住路径备用。
 
-For example, you can download the free ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) model from [Cubism](https://www.live2d.com/en/learn/sample/), and place the extracted `hiyori_free/` directory in `install/Chobits/models/`:
+以免费模型 ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) 为例：
 
 ```bash
 mkdir -p install/Chobits/models
@@ -247,9 +264,9 @@ unzip hiyori_en.zip
 cp hiyori_free install/Chobits/models/ -r
 ```
 
-#### Config File
+#### 配置文件
 
-Copy the example configuration file to `install/Chobits/config.toml`:
+将示例配置文件复制到 `install/Chobits/config.toml`：
 
 ```bash
 cp example_config.toml install/Chobits/config.toml
@@ -257,7 +274,7 @@ cp example_config.toml install/Chobits/config.toml
 
 </details>
 
-### Format, Lint, and Test
+### 格式化、Lint 与测试
 
 ```bash
 cargo fmt --all --check && cargo clippy-all && cargo test-all && cargo check -p chobits-zellij --target wasm32-wasip1
@@ -265,22 +282,22 @@ cargo fmt --all --check && cargo clippy-all && cargo test-all && cargo check -p 
 
 </details>
 
-## Deployment
+## 部署
 
 <details>
-<summary>Click to expand</summary>
+<summary>展开</summary>
 
-This is the final directory structure of the `Chobits/` folder (under `install/` when built from source, or at the top level when extracted from a release). We call this folder the **Chobits root**.
+以下是 `Chobits/` 文件夹的最终目录结构（从源码构建时位于 `install/` 下，从发行版解压时位于顶层）。我们称这个文件夹为 **Chobits 根目录**。
 
-Move the `Chobits/` folder wherever you want. For MSYS2 UCRT64/MINGW64 users, you may keep it inside MSYS2 or move it to native Windows.
+你可以将 `Chobits/` 文件夹移到任意位置。MSYS2 UCRT64/MINGW64 用户既可以保留在 MSYS2 环境内，也可以移到原生 Windows 目录。
 
 ```
 Chobits/
 ├── .chobits-root
 ├── bin/
-│   └── chobits-start          # .exe on Windows
+│   └── chobits-start          # Windows 下为 .exe
 ├── config.toml
-├── .zellij/                   # Zellij config/data ([zellij] paths)
+├── .zellij/                   # Zellij 配置/数据（[zellij] 路径）
 ├── expressions/
 │   ├── blink.osf.bin
 │   ├── happy.osf.bin
@@ -296,32 +313,32 @@ Chobits/
 │       ├── chobits-bar
 │       ├── chobits-zellij.wasm
 │       ├── live-ascii
-│       └── zellij               # .exe on Windows
+│       └── zellij               # Windows 下为 .exe
 └── models/
     └── hiyori_free/
         └── runtime/
-            └── hiyori_free_t08.model3.json  (+ textures, motions, …)
+            └── hiyori_free_t08.model3.json  （含贴图、动作等）
 ```
 
 </details>
 
-## Configuration
+## 配置
 
-All configuration lives in `config.toml` at the Chobits root. Paths may be absolute or relative to the **Chobits root** (the folder containing `config.toml`), regardless of where you launch the app from.
+所有配置集中在 Chobits 根目录下的 `config.toml` 中。路径可以是绝对路径，也可以是相对于 **Chobits 根目录**（即 `config.toml` 所在目录）的相对路径，与启动位置无关。
 
-### `[llm]` — Language Model
+### `[llm]` — 语言模型
 
-The LLM backend that powers Chi's reactions — plug in any Ollama or OpenAI-compatible API.
+驱动桌宠反应的 LLM 后端——接入任意 Ollama 或 OpenAI 兼容 API。
 
-|     Key      |          Default           |                   Description                   |
-| ------------ | -------------------------- | ----------------------------------------------- |
-| `backend`    | `"ollama"`                 | `"ollama"` or anything else = OpenAI-compatible |
-| `url`        | `"http://localhost:11434"` | API base URL                                    |
-| `model`      | `"qwen3:0.6b"`             | Model name                                      |
-| `max_tokens` | `512`                      | Max tokens per response                         |
-| `api_key`    | (empty)                    | API key for OpenAI-compatible backends          |
+|     键       |          默认值                |                   说明                          |
+| ------------ | ------------------------------ | ----------------------------------------------- |
+| `backend`    | `"ollama"`                     | `"ollama"` 或其他任意值（OpenAI 兼容模式）       |
+| `url`        | `"http://localhost:11434"`     | API 基础 URL                                    |
+| `model`      | `"qwen3:0.6b"`                 | 模型名称                                        |
+| `max_tokens` | `512`                          | 每次响应最大 token 数                            |
+| `api_key`    | （空）                          | OpenAI 兼容后端的 API 密钥                       |
 
-Example for Ollama:
+Ollama 示例：
 
 ```toml
 [llm]
@@ -331,7 +348,7 @@ model      = "qwen3:0.6b"
 max_tokens = 512
 ```
 
-Example for other OpenAI-compatible provider (`backend != "ollama"`):
+其他 OpenAI 兼容服务示例（`backend != "ollama"`）：
 
 ```toml
 [llm]
@@ -342,14 +359,14 @@ max_tokens = 512
 api_key    = "sk-..."
 ```
 
-### `[persona]` — Character
+### `[persona]` — 角色设定
 
-Define who the character is. The description shapes every reaction.
+定义桌宠角色的个性，将影响角色每一次回答时的风格。
 
-|      Key      |   Default   |               Description                |
-| ------------- | ----------- | ---------------------------------------- |
-| `name`        | `"Chi"`     | Character name used in the system prompt |
-| `description` | (see below) | Personality description for the LLM      |
+|      键       |   默认值    |               说明                        |
+| ------------- | ----------- | ----------------------------------------- |
+| `name`        | `"Chi"`     | 在系统提示中使用的角色名                   |
+| `description` | （见下方）  | 提供给 LLM 的个性描述                      |
 
 ```toml
 [persona]
@@ -361,17 +378,17 @@ You genuinely care about what the user is working on.
 """
 ```
 
-### `[snapshot]` — Terminal Polling
+### `[snapshot]` — 终端轮询
 
-Controls how the Zellij plugin captures the currently focused pane (in text) and how often it polls. Snapshots are truncated to `max_bytes`, then posted to `http://127.0.0.1:{port}/snapshot` via Zellij's `web_request` API (localhost only — not exposed on your LAN). The daemon forwards changed snapshots to the LLM when it is not busy.
+控制 Zellij 插件捕获当前焦点面板快照（文本）的方式和频率。快照会被截断到 `max_bytes`，然后通过 Zellij 的 `web_request` API 以 HTTP POST 发送到 `http://127.0.0.1:{port}/snapshot`（仅本地回环，不对外网暴露）。守护进程在空闲时将变化的快照转发给 LLM。
 
-If the focused pane content is unchanged since the last poll, the daemon skips the LLM call to save tokens.
+若焦点面板内容自上次轮询以来未发生变化，守护进程将跳过 LLM 调用以节省 token。
 
-|       Key       | Default |              Description              |
-| --------------- | ------- | ------------------------------------- |
-| `port`          | `7880`  | Localhost HTTP — plugin `POST /snapshot` |
-| `max_bytes`     | `4096`  | Truncate snapshots (head + tail)      |
-| `interval_secs` | `10`    | Plugin pane polling interval          |
+|       键        | 默认值  |              说明                      |
+| --------------- | ------- | -------------------------------------- |
+| `port`          | `7880`  | 本地 HTTP——插件 `POST /snapshot`        |
+| `max_bytes`     | `4096`  | 快照截断大小（首尾各取一部分）          |
+| `interval_secs` | `10`    | 插件面板轮询间隔（秒）                  |
 
 ```toml
 [snapshot]
@@ -380,14 +397,14 @@ max_bytes     = 4096
 interval_secs = 10
 ```
 
-### `[bar]` — Text Reaction Bar
+### `[bar]` — 文字反应栏
 
-Controls the chobits-bar scrollback pane. Mouse wheel scrolls history; new messages auto-scroll only when you are already at the bottom. Press `q`, `Esc`, or `Ctrl+C` to quit the bar pane.
+控制 chobits-bar 滚动面板。鼠标滚轮可翻阅历史；只有当你已在底部时，新消息才会自动滚动。按 `q`、`Esc` 或 `Ctrl+C` 退出反应栏面板。
 
-|        Key         | Default |                Description                 |
-| ------------------ | ------- | ------------------------------------------ |
-| `port`             | `7879`  | TCP — daemon sends text reactions          |
-| `history_length`   | `50`    | Max text reactions kept in scrollback      |
+|        键          | 默认值  |                说明                         |
+| ------------------ | ------- | ------------------------------------------- |
+| `port`             | `7879`  | TCP——守护进程发送文字反应                    |
+| `history_length`   | `50`    | 滚动历史中保留的最大反应条数                 |
 
 ```toml
 [bar]
@@ -396,25 +413,25 @@ history_length = 50
 ```
 
 <details>
-<summary>Click to expand more config items</summary>
+<summary>展开更多配置项</summary>
 
-### `[live-ascii]` — Live2D ASCII Renderer
+### `[live-ascii]` — Live2D ASCII 渲染器
 
-Controls the live-ascii pane — model path, input sources, protocol, and view tweaks.
+控制 live-ascii 面板——模型路径、输入源、协议及视图参数。
 
-|       Key        |      Default      |               Description               |
-| ---------------- | ----------------- | --------------------------------------- |
-| `model_set`      | (empty)           | Path to `.model3.json` file             |
-| `enable_osf`     | `true`            | `--camera` (accept OSF frames)          |
-| `enable_mouse`   | `true`            | `--mouse` (drag to pan, scroll to zoom) |
-| `enable_physics` | `true`            | `--physics` (hair/wind physics)         |
-| `image_protocol` | `"halfblock"`     | `halfblock`, `kitty`, or `sixel`        |
-| `bg_color`       | `"rgba(0,0,0,0)"` | Background behind the character         |
-| `scale`          | `"100%"`          | View scale percentage                   |
-| `offset_x`       | `"0%"`            | Horizontal offset % of panel width      |
-| `offset_y`       | `"0%"`            | Vertical offset % of panel height       |
+|       键         |      默认值       |               说明                       |
+| ---------------- | ----------------- | ---------------------------------------- |
+| `model_set`      | （空）            | `.model3.json` 文件路径                   |
+| `enable_osf`     | `true`            | `--camera`（接收 OSF 帧）                 |
+| `enable_mouse`   | `true`            | `--mouse`（拖动平移，滚轮缩放）            |
+| `enable_physics` | `true`            | `--physics`（发丝/风力物理）               |
+| `image_protocol` | `"halfblock"`     | `halfblock`、`kitty` 或 `sixel`           |
+| `bg_color`       | `"rgba(0,0,0,0)"` | 角色背后的背景色                           |
+| `scale`          | `"100%"`          | 视图缩放比例                               |
+| `offset_x`       | `"0%"`            | 水平偏移（面板宽度百分比）                  |
+| `offset_y`       | `"0%"`            | 垂直偏移（面板高度百分比）                  |
 
-Bundled example (Hiyori-tuned scale/offset):
+内置示例（针对 Hiyori 调整的缩放/偏移）：
 
 ```toml
 [live-ascii]
@@ -429,13 +446,13 @@ offset_x       = "0%"
 offset_y       = "95%"
 ```
 
-### `[zellij]` — Layout
+### `[zellij]` — 布局
 
-Defines how Zellij arranges panes — terminal, live-ascii, bar, tab-bar, and status-bar.
+定义 Zellij 的面板排布方式——终端、live-ascii、反应栏、标签栏和状态栏。
 
-The KDL layout uses templates `{chobits_bin}`, `{plugin_path}`, `{live_ascii_bin}`, `{chobits_bar_bin}`, `{live_ascii_args}`, `{interval_secs}`, `{max_bytes}`, `{snapshot_port}`, etc. — these are filled in at launch time, so keep them as literal placeholders.
+KDL 布局使用模板占位符 `{chobits_bin}`、`{plugin_path}`、`{live_ascii_bin}`、`{chobits_bar_bin}`、`{live_ascii_args}`、`{interval_secs}`、`{max_bytes}`、`{snapshot_port}` 等——这些在启动时自动填充，请保留为字面量占位符。
 
-On each launch, `chobits-start` writes the resolved layout to `.zellij/config/layouts/layout.kdl` and pre-grants the WASM plugin permissions (`ReadApplicationState`, `ReadPaneContents`, `WebAccess`).
+每次启动时，`chobits-start` 会将解析后的布局写入 `.zellij/config/layouts/layout.kdl`，并预授予 WASM 插件权限（`ReadApplicationState`、`ReadPaneContents`、`WebAccess`）。
 
 ```toml
 [zellij]
@@ -474,124 +491,117 @@ layout {
 
 ```
 ┌─────────────────────┬──────────┐
-│   terminal          │live-ascii│
-│   (zellij native    │          │
-│    with plugin      ├──────────┤
-│    polling via      │chi bar   │
-│    pane scrollback) │(ratatui) │
+│   终端              │live-ascii│
+│   (zellij 原生      │          │
+│    含插件           ├──────────┤
+│    通过面板滚动区   │  回应栏  │
+│    轮询快照)        │(ratatui) │
 └─────────────────────┴──────────┘
 ```
 
-### `[expressions]` — OSF Expression Files
+### `[expressions]` — OSF 表情文件
 
-Maps expression names to OSF binary dumps. The daemon scans `.osf.bin` files here and feeds the list to the LLM so it can pick one in each response.
+将表情名称映射到 OSF 二进制文件。守护进程扫描此目录下的 `.osf.bin` 文件，并将列表提供给 LLM，以便在每次响应中选择合适的表情。
 
-If the current Zellij pane has not changed for `idle_timeout_secs` seconds, the character will become idle.
+若当前 Zellij 面板在 `idle_timeout_secs` 秒内未发生变化，角色将进入待机状态。
 
-Users can add more expressions to the directory by [recording](#tools) them with [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) running.
+用户可以通过使用 [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) [录制](#工具)新的表情文件来扩充表情库。
 
-|         Key          | Default |                         Description                          |
-| -------------------- | ------- | ------------------------------------------------------------ |
-| `dir`                | `"expressions"` | Folder containing `.osf.bin` files                 |
-| `idle_timeout_secs`  | `30`    | Seconds of pane inactivity before idle behavior              |
-| `osf_port`           | `11573` | UDP port live-ascii listens on for OSF frames (optional)     |
+|         键           | 默认值          |                         说明                                 |
+| -------------------- | --------------- | ------------------------------------------------------------ |
+| `dir`                | `"expressions"` | 存放 `.osf.bin` 文件的目录                                   |
+| `idle_timeout_secs`  | `30`            | 面板无变化多少秒后进入待机状态                                |
+| `osf_port`           | `11573`         | live-ascii 监听 OSF 帧的 UDP 端口（可选）                    |
 
 ```toml
 [expressions]
 dir               = "expressions"
 idle_timeout_secs = 30
-# osf_port        = 11573   # optional; default shown above
+# osf_port        = 11573   # 可选，默认值如上
 ```
 
 </details>
 
-## Run
+## 运行
 
-### Launch
+### 启动
 
-If you used the [Quick Start](#quick-start) installer, run `chobits-start` from anywhere.
+使用[快速开始](#快速开始)安装器安装后，在任意目录执行：
 
 ```bash
 chobits-start
 ```
 
-Manual install or release archive — run from a directory that can reach your **Chobits root**:
+手动安装或从发行版解压后，在能访问 **Chobits 根目录**的位置执行：
 
 ```bash
 Chobits/bin/chobits-start
 ```
 
-Config lives at `<Chobits root>/config.toml`. Edit `[llm]` before your first run — see [Quick Start](#quick-start) for examples.
+配置文件位于 `<Chobits 根目录>/config.toml`。首次运行前请先编辑 `[llm]`——示例参见[快速开始](#快速开始)。
 
-On first launch a new Zellij session is created. On subsequent runs,
-`chobits-start` detects the existing session and re-attaches automatically.
-If multiple sessions are running, you will be prompted to select one.
+首次启动会自动创建新的 Zellij 会话。后续运行时，`chobits-start` 会自动检测并重连已有会话；若存在多个会话，会提示你选择。
 
-To detach from the session without stopping it, press `Ctrl+o` then `d` inside Zellij.
-Running `chobits-start` again will re-attach. To terminate the session entirely,
-press `Ctrl+q` or close all panes.
+在 Zellij 中按 `Ctrl+o` 再按 `d` 可分离会话而不终止它，再次运行 `chobits-start` 即可重新连接。按 `Ctrl+q` 或关闭所有面板可彻底退出会话。
 
 > [!NOTE]
-> After upgrading Chobits, run `chobits-start` once so Zellij picks up layout changes
-> (e.g. `snapshot_port`) and refreshed plugin permissions.
+> 升级 Chobits 后，请运行一次 `chobits-start`，让 Zellij 加载新的布局变更（如 `snapshot_port`）和刷新后的插件权限。
 
-### Subcommands
+### 子命令
 
-Pass arguments directly to the bundled Zellij instance:
+将参数直接传递给内置的 Zellij 实例：
 
 ```bash
 chobits-start zellij <args>
 
-# Examples
-chobits-start zellij ls                  # list sessions
+# 示例
+chobits-start zellij ls                  # 列出所有会话
 chobits-start zellij attach --session <name>
 chobits-start zellij --help
 ```
 
-This is equivalent to running `zellij --config-dir ... --data-dir ... <args>`
-with the correct isolated paths — no need to know where they are.
+这等价于使用正确的隔离路径执行 `zellij --config-dir ... --data-dir ... <args>`，无需手动指定路径。
 
 > [!NOTE]
-> Detaching (`Ctrl+o` then `d`) pauses terminal snapshot polling, so there will be no LLM calls from
-> screen changes while no client is attached.
+> 分离（`Ctrl+o` 然后 `d`）后，终端快照轮询会暂停，因此没有客户端连接时不会产生 LLM 调用。
 
-## Architecture
+## 架构
 
-`chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Default localhost ports:
+`chobits-start` 启动 Zellij，其中运行守护进程、live-ascii、chobits-bar 和 `chobits-zellij` WASM 插件。默认本地端口：
 
-| Port   | Config key              | Protocol | Purpose                          |
-| ------ | ----------------------- | -------- | -------------------------------- |
-| `7880` | `[snapshot] port`       | HTTP     | Plugin → daemon snapshots        |
-| `7879` | `[bar] port`            | TCP      | Daemon → chobits-bar reactions   |
-| `11573`| `[expressions] osf_port`| UDP      | Daemon → live-ascii OSF frames   |
+| 端口    | 配置键                   | 协议  | 用途                              |
+| ------- | ------------------------ | ----- | --------------------------------- |
+| `7880`  | `[snapshot] port`        | HTTP  | 插件 → 守护进程快照               |
+| `7879`  | `[bar] port`             | TCP   | 守护进程 → chobits-bar 反应        |
+| `11573` | `[expressions] osf_port` | UDP   | 守护进程 → live-ascii OSF 帧       |
 
-**Data flow** (while a client is attached):
+**数据流**（客户端连接时）：
 
 ```
-chobits-start ──▶ zellij session (layout from config.toml)
+chobits-start ──▶ zellij 会话（布局来自 config.toml）
                       │
-chobits-zellij ──get_pane_scrollback──▶ snapshot JSON
+chobits-zellij ──get_pane_scrollback──▶ 快照 JSON
                       │
                       └──HTTP POST :7880──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
-                                              ├── HTTP REST ──▶ LLM backend
+                                              ├── HTTP REST ──▶ LLM 后端
                                               └── UDP:11573 ──▶ live-ascii
 ```
 
-When no client is attached (detached), the plugin skips pane polling.
+客户端分离（detach）时，插件跳过面板轮询。
 
-**Layout** (inside Zellij):
+**布局**（Zellij 内部）：
 
 ```mermaid
 flowchart TB
-    subgraph Zellij["Zellij session"]
+    subgraph Zellij["Zellij 会话"]
         direction LR
-        Terminal["Main terminal<br/>chobits-zellij plugin"]
-        Daemon["chobits daemon"]
+        Terminal["主终端\nchobits-zellij 插件"]
+        Daemon["chobits 守护进程"]
         LiveAscii["live-ascii"]
         Bar["chobits-bar"]
     end
 
-    LLM["LLM backend<br/>(Ollama or compatible API)"]
+    LLM["LLM 后端\n(Ollama 或兼容 API)"]
 
     Terminal -->|"HTTP POST :7880"| Daemon
     Daemon -->|"HTTP REST"| LLM
@@ -599,40 +609,40 @@ flowchart TB
     Daemon -->|"TCP :7879"| Bar
 ```
 
-### Communication Contracts
+### 通信接口
 
-| Link                          | Protocol                                      | Direction |
-| ----------------------------- | --------------------------------------------- | --------- |
-| chobits-zellij → chobits        | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | one-way   |
-| chobits → LLM                 | HTTP REST (Ollama or OpenAI-compatible)       | req/reply |
-| chobits → chobits-bar         | TCP `:7879` (default), newline-delimited text | one-way   |
-| chobits → live-ascii          | UDP `:11573` (default), OSF frames            | one-way   |
+| 链路                            | 协议                                                          | 方向      |
+| ------------------------------- | ------------------------------------------------------------- | --------- |
+| chobits-zellij → chobits        | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot`   | 单向      |
+| chobits → LLM                   | HTTP REST（Ollama 或 OpenAI 兼容）                            | 请求/响应 |
+| chobits → chobits-bar           | TCP `:7879`（默认），换行符分隔文本                            | 单向      |
+| chobits → live-ascii            | UDP `:11573`（默认），OSF 帧                                   | 单向      |
 
-## Tools
+## 工具
 
-| Tool                                | Description                              |
-| ----------------------------------- | ---------------------------------------- |
-| `tool/openseeface_record_packet.py` | Capture raw OSF UDP frames to `.osf.bin` |
-| `tool/openseeface_play_packet.py`   | Playback `.osf.bin` over UDP for testing |
+| 工具                                | 说明                                      |
+| ----------------------------------- | ----------------------------------------- |
+| `tool/openseeface_record_packet.py` | 将 OSF UDP 原始帧录制为 `.osf.bin` 文件   |
+| `tool/openseeface_play_packet.py`   | 通过 UDP 回放 `.osf.bin` 文件，用于测试   |
 
-Both tools use UDP port `11573` by default (same as `[expressions] osf_port`).
+两个工具默认使用 UDP 端口 `11573`（与 `[expressions] osf_port` 一致）。
 
-Record from a live OpenSeeFace session:
+从实时 OpenSeeFace 会话录制表情：
 
 ```bash
 python tool/openseeface_record_packet.py neutral.osf.bin
 ```
 
-Test playback independently:
+独立测试回放：
 
 ```bash
 python tool/openseeface_play_packet.py neutral.osf.bin --loop
 ```
 
-## Related Projects
+## 相关项目
 
-- [NewComer00/live-ascii](https://github.com/NewComer00/live-ascii) (forked from [Arcelyth/live-ascii](https://github.com/Arcelyth/live-ascii), Copyright (c) 2026 Arcelyth, MIT License)
+- [NewComer00/live-ascii](https://github.com/NewComer00/live-ascii)（派生自 [Arcelyth/live-ascii](https://github.com/Arcelyth/live-ascii)，Copyright (c) 2026 Arcelyth，MIT 许可证）
 
-## License
+## 许可证
 
 MIT
