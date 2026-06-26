@@ -96,8 +96,17 @@ add_to_path() {
     touch "$rc"
     path_line="export PATH=\"${BIN_DIR}:\$PATH\"  # chobits"
 
+    # sed -i behaves differently on GNU (Linux) vs BSD (macOS):
+    # GNU requires:  sed -i 'expr'
+    # BSD requires:  sed -i '' 'expr'
+    if sed --version 2>/dev/null | grep -q GNU; then
+        _sed_i() { sed -i "$@"; }
+    else
+        _sed_i() { sed -i '' "$@"; }
+    fi
+
     if grep -Fq '# chobits' "$rc"; then
-        sed -i "s|^export PATH=.*# chobits|${path_line}|" "$rc"
+        _sed_i "s|^export PATH=.*# chobits|${path_line}|" "$rc"
         info "updated PATH in ${rc}"
     else
         {
@@ -148,25 +157,40 @@ EOF
     printf '\n'
 }
 
-case "$(uname -s)" in
-    Linux) ;;
-    *)
-        err "unsupported OS: $(uname -s) (Linux x86_64 only)"
-        ;;
-esac
+# --------------- Platform detection ---------------
+os=$(uname -s)
+arch=$(uname -m)
 
-case "$(uname -m)" in
-    x86_64 | amd64) ;;
-    *)
-        err "unsupported architecture: $(uname -m) (x86_64 only)"
-        ;;
-esac
+case "$os" in
+    Linux)
+        case "$arch" in
+            x86_64|amd64) ;;
+            *)
+                err "unsupported architecture on Linux: $arch (x86_64 only)"
+                ;;
+        esac
 
-libc="${CHOBITS_LIBC:-musl}"
-case "$libc" in
-    musl) target="x86_64-unknown-linux-musl" ;;
-    gnu) target="x86_64-unknown-linux-gnu" ;;
-    *) err "CHOBITS_LIBC must be 'musl' or 'gnu'" ;;
+        libc="${CHOBITS_LIBC:-musl}"
+        case "$libc" in
+            musl) target="x86_64-unknown-linux-musl" ;;
+            gnu)  target="x86_64-unknown-linux-gnu" ;;
+            *)    err "CHOBITS_LIBC must be 'musl' or 'gnu'" ;;
+        esac
+        ;;
+
+    Darwin)
+        case "$arch" in
+            arm64)    target="aarch64-apple-darwin" ;;
+            x86_64)   target="x86_64-apple-darwin" ;;
+            *)
+                err "unsupported architecture on macOS: $arch (arm64 or x86_64 only)"
+                ;;
+        esac
+        ;;
+
+    *)
+        err "unsupported OS: $os (Linux or macOS only)"
+        ;;
 esac
 
 if [ "$VERSION" = "latest" ]; then

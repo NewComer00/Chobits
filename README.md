@@ -7,6 +7,7 @@ A cross-platform Live2D terminal companion living inside Zellij driven by LLM.
 ## Supported Platforms
 
 - Linux
+- macOS
 - Windows*
 
 > \* **Building** on Windows requires MSYS2 UCRT64 or MINGW64. **Pre-built release archives** run on native Windows without MSYS2.
@@ -15,7 +16,7 @@ A cross-platform Live2D terminal companion living inside Zellij driven by LLM.
 
 Install the latest release with one command. The installer adds `chobits-start` to your user PATH and prints `[llm]` examples for `config.toml`.
 
-### Install on Linux
+### Install on Linux / macOS
 
 Requires Bash or Zsh. Default install location: `~/.local/share/Chobits`.
 
