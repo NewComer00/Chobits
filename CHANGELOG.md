@@ -24,3 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Chores
 
 - chore: move scripts to scripts/
+## [v0.3.3] - 2026-06-26
+
+### Bug Fixes
+
+- fix: make scripts executable
