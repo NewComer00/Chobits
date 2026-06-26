@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "chobits"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chobits-meta",
  "directories",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "chobits-bar"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chobits",
  "crossterm",
@@ -221,14 +221,14 @@ dependencies = [
 
 [[package]]
 name = "chobits-meta"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "strip-ansi-escapes 0.2.1",
 ]
 
 [[package]]
 name = "chobits-start"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chobits",
  "chobits-meta",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "chobits-zellij"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chobits-meta",
  "serde",
