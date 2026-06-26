@@ -13,6 +13,6 @@ name = "chobits-start"
 path = "src/main.rs"
 
 [dependencies]
-chobits = { path = "../chobits" }
-chobits-meta = { path = "../chobits-meta" }
+chobits = { path = "../chobits", version = "0.2.0" }
+chobits-meta = { path = "../chobits-meta", version = "0.2.0" }
 chrono = "0.4"
