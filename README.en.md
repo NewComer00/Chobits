@@ -21,6 +21,11 @@ A cross-platform Live2D terminal companion living inside Zellij driven by LLM.
 
 ## Quick Start
 
+> [!NOTE]  
+> The release package includes a free model ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) downloaded from [Cubism](https://www.live2d.com/en/learn/sample/).
+> 
+> Before using this model, please review the ["Free Material License Agreement"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) and the ["Live2D Cubism Sample Data Terms of Use"](https://www.live2d.com/learn/sample/model-terms/).
+
 Install the [latest release](https://github.com/NewComer00/Chobits/releases/latest) with one command. The installer adds `chobits-start` to your user PATH and prints `[llm]` examples for `config.toml`.
 
 ### Install on Linux
@@ -95,12 +100,12 @@ For manual installs, see [Download from Release](#download-from-release) or [Bui
 
 ### Installer options
 
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `CHOBITS_INSTALL_DIR` | `~/.local/share/Chobits` / `%LOCALAPPDATA%\Chobits` | Install location |
-| `CHOBITS_VERSION` | `latest` | Release tag (e.g. `v0.2.0`) |
-| `CHOBITS_LIBC` | `musl` | Linux only: `musl` or `gnu` |
-| `CHOBITS_NO_MODIFY_PATH` | (unset) | Set to `1` to skip adding `bin/` to user PATH |
+|         Variable         |                       Default                       |                  Description                  |
+| ------------------------ | --------------------------------------------------- | --------------------------------------------- |
+| `CHOBITS_INSTALL_DIR`    | `~/.local/share/Chobits` / `%LOCALAPPDATA%\Chobits` | Install location                              |
+| `CHOBITS_VERSION`        | `latest`                                            | Release tag (e.g. `v0.2.0`)                   |
+| `CHOBITS_LIBC`           | `musl`                                              | Linux only: `musl` or `gnu`                   |
+| `CHOBITS_NO_MODIFY_PATH` | (unset)                                             | Set to `1` to skip adding `bin/` to user PATH |
 
 </details>
 
@@ -109,18 +114,14 @@ For manual installs, see [Download from Release](#download-from-release) or [Bui
 <details>
 <summary>Click to expand</summary>
 
-> [!NOTE]  
-> The release package includes a free model ["Hiyori"](https://www.live2d.com/en/learn/sample/momose-hiyori/) downloaded from [Cubism](https://www.live2d.com/en/learn/sample/).
-> 
-> Before using this model, please review the ["Free Material License Agreement"](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) and the ["Live2D Cubism Sample Data Terms of Use"](https://www.live2d.com/learn/sample/model-terms/).
 Pre-built binaries are available on the [Releases](https://github.com/NewComer00/Chobits/releases) page for the following platforms:
 
-|                  Package                        |    Platform      |                      Notes                            |
-| ----------------------------------------------- | ---------------- | ----------------------------------------------------- |
-| `Chobits-x86_64-unknown-linux-gnu.tar.gz`       | x86_64 Linux     | Standard glibc-linked build                           |
-| `Chobits-x86_64-unknown-linux-musl.tar.gz`      | x86_64 Linux     | Lightweight, static-linked musl build                 |
-| `Chobits-aarch64-apple-darwin.tar.gz`           | Apple Silicon macOS | arm64 build for M-series Macs                      |
-| `Chobits-x86_64-pc-windows-gnu.zip`             | x86_64 Windows   | Runs on native Windows; no MSYS2 required             |
+|                  Package                   |      Platform       |                   Notes                   |
+| ------------------------------------------ | ------------------- | ----------------------------------------- |
+| `Chobits-x86_64-unknown-linux-gnu.tar.gz`  | x86_64 Linux        | Standard glibc-linked build               |
+| `Chobits-x86_64-unknown-linux-musl.tar.gz` | x86_64 Linux        | Lightweight, static-linked musl build     |
+| `Chobits-aarch64-apple-darwin.tar.gz`      | Apple Silicon macOS | arm64 build for M-series Macs             |
+| `Chobits-x86_64-pc-windows-gnu.zip`        | x86_64 Windows      | Runs on native Windows; no MSYS2 required |
 
 Download and extract the archive for your platform:
 
@@ -169,8 +170,8 @@ To proceed, continue with the [Deployment](#deployment) instructions.
 
 ### Prerequisites
 
-| Tool           | Description                                                                           |
-|----------------|---------------------------------------------------------------------------------------|
+|      Tool      |                                      Description                                      |
+| -------------- | ------------------------------------------------------------------------------------- |
 | git            | Version control system to clone the repository.                                       |
 | git-lfs        | Git extension for handling large files. Install it with: \`git lfs install\`.         |
 | cargo          | Rust toolchain with native and 'wasm32-wasip1' targets.                               |
@@ -336,7 +337,9 @@ Chobits/
 
 ## Configuration
 
-All configuration lives in `config.toml` at the Chobits root. Paths may be absolute or relative to the **Chobits root** (the folder containing `config.toml`), regardless of where you launch the app from.
+All configuration lives in `config.toml` at the Chobits root. The default configuration file generated by [Quick Start](#quick-start) is located at `~/.local/share/Chobits/config.toml` (Linux / macOS) or `%LOCALAPPDATA%\Chobits\config.toml` (Windows).
+
+Paths may be absolute or relative to the **Chobits root** (the folder containing `config.toml`), regardless of where you launch the app from.
 
 ### `[llm]` — Language Model
 
@@ -396,11 +399,11 @@ Controls how the Zellij plugin captures the currently focused pane (in text) and
 
 If the focused pane content is unchanged since the last poll, the daemon skips the LLM call to save tokens.
 
-|       Key       | Default |              Description              |
-| --------------- | ------- | ------------------------------------- |
+|       Key       | Default |               Description                |
+| --------------- | ------- | ---------------------------------------- |
 | `port`          | `7880`  | Localhost HTTP — plugin `POST /snapshot` |
-| `max_bytes`     | `4096`  | Truncate snapshots (head + tail)      |
-| `interval_secs` | `10`    | Plugin pane polling interval          |
+| `max_bytes`     | `4096`  | Truncate snapshots (head + tail)         |
+| `interval_secs` | `10`    | Plugin pane polling interval             |
 
 ```toml
 [snapshot]
@@ -413,10 +416,10 @@ interval_secs = 10
 
 Controls the chobits-bar scrollback pane. Mouse wheel scrolls history; new messages auto-scroll only when you are already at the bottom. Press `q`, `Esc`, or `Ctrl+C` to quit the bar pane.
 
-|        Key         | Default |                Description                 |
-| ------------------ | ------- | ------------------------------------------ |
-| `port`             | `7879`  | TCP — daemon sends text reactions          |
-| `history_length`   | `50`    | Max text reactions kept in scrollback      |
+|       Key        | Default |              Description              |
+| ---------------- | ------- | ------------------------------------- |
+| `port`           | `7879`  | TCP — daemon sends text reactions     |
+| `history_length` | `50`    | Max text reactions kept in scrollback |
 
 ```toml
 [bar]
@@ -430,6 +433,8 @@ history_length = 50
 ### `[live-ascii]` — Live2D ASCII Renderer
 
 Controls the live-ascii pane — model path, input sources, protocol, and view tweaks.
+
+When the live-ascii pane has focus, use the arrow keys or mouse drag to move the model. You can also use the plus/minus keys or the mouse wheel to resize the model.
 
 |       Key        |      Default      |               Description               |
 | ---------------- | ----------------- | --------------------------------------- |
@@ -519,11 +524,11 @@ If the current Zellij pane has not changed for `idle_timeout_secs` seconds, the 
 
 Users can add more expressions to the directory by [recording](#tools) them with [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) running.
 
-|         Key          | Default |                         Description                          |
-| -------------------- | ------- | ------------------------------------------------------------ |
-| `dir`                | `"expressions"` | Folder containing `.osf.bin` files                 |
-| `idle_timeout_secs`  | `30`    | Seconds of pane inactivity before idle behavior              |
-| `osf_port`           | `11573` | UDP port live-ascii listens on for OSF frames (optional)     |
+|         Key         |     Default     |                       Description                        |
+| ------------------- | --------------- | -------------------------------------------------------- |
+| `dir`               | `"expressions"` | Folder containing `.osf.bin` files                       |
+| `idle_timeout_secs` | `30`            | Seconds of pane inactivity before idle behavior          |
+| `osf_port`          | `11573`         | UDP port live-ascii listens on for OSF frames (optional) |
 
 ```toml
 [expressions]
@@ -588,11 +593,11 @@ with the correct isolated paths — no need to know where they are.
 
 `chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Default localhost ports:
 
-| Port   | Config key              | Protocol | Purpose                          |
-| ------ | ----------------------- | -------- | -------------------------------- |
-| `7880` | `[snapshot] port`       | HTTP     | Plugin → daemon snapshots        |
-| `7879` | `[bar] port`            | TCP      | Daemon → chobits-bar reactions   |
-| `11573`| `[expressions] osf_port`| UDP      | Daemon → live-ascii OSF frames   |
+|  Port   |        Config key        | Protocol |            Purpose             |
+| ------- | ------------------------ | -------- | ------------------------------ |
+| `7880`  | `[snapshot] port`        | HTTP     | Plugin → daemon snapshots      |
+| `7879`  | `[bar] port`             | TCP      | Daemon → chobits-bar reactions |
+| `11573` | `[expressions] osf_port` | UDP      | Daemon → live-ascii OSF frames |
 
 **Data flow** (while a client is attached):
 
@@ -630,16 +635,16 @@ flowchart TB
 
 ### Communication Contracts
 
-| Link                          | Protocol                                      | Direction |
-| ----------------------------- | --------------------------------------------- | --------- |
-| chobits-zellij → chobits        | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | one-way   |
-| chobits → LLM                 | HTTP REST (Ollama or OpenAI-compatible)       | req/reply |
-| chobits → chobits-bar         | TCP `:7879` (default), newline-delimited text | one-way   |
-| chobits → live-ascii          | UDP `:11573` (default), OSF frames            | one-way   |
+|           Link           |                          Protocol                          | Direction |
+| ------------------------ | ---------------------------------------------------------- | --------- |
+| chobits-zellij → chobits | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | one-way   |
+| chobits → LLM            | HTTP REST (Ollama or OpenAI-compatible)                    | req/reply |
+| chobits → chobits-bar    | TCP `:7879` (default), newline-delimited text              | one-way   |
+| chobits → live-ascii     | UDP `:11573` (default), OSF frames                         | one-way   |
 
 ## Tools
 
-| Tool                                | Description                              |
+|                Tool                 |               Description                |
 | ----------------------------------- | ---------------------------------------- |
 | `tool/openseeface_record_packet.py` | Capture raw OSF UDP frames to `.osf.bin` |
 | `tool/openseeface_play_packet.py`   | Playback `.osf.bin` over UDP for testing |
