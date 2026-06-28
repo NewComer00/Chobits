@@ -7,6 +7,8 @@ use chobits_meta::PLUGIN_PERMISSIONS;
 mod session;
 
 fn main() {
+    chobits_meta::apply_loopback_no_proxy_to_process();
+
     print_banner();
 
     let config_dir = chobits::config::chobits_dir();

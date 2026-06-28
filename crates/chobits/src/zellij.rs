@@ -27,6 +27,7 @@ impl ZellijRunner {
             "--data-dir",
             &self.data_dir.to_string_lossy(),
         ]);
+        chobits_meta::apply_loopback_no_proxy_to_command(&mut cmd);
         cmd
     }
 

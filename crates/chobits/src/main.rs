@@ -33,6 +33,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    chobits_meta::apply_loopback_no_proxy_to_process();
+
     let args = std::env::args().skip(1);
     let mut quiet = false;
     for arg in args {
