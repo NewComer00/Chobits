@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use directories::BaseDirs;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -15,9 +16,8 @@ use std::sync::OnceLock;
 // ║    ├── local/bin/   (chobits, chobits-bar, plugin .wasm, …)         ║
 // ║    ├── config.toml  (user config)                                     ║
 // ║    ├── .zellij/     (Zellij config/data; layout.kdl written here)    ║
-// ║    ├── expressions/ (default location)                                ║
+// ║    ├── models/      (default location)                                ║
 // ║    ├── logs/        (auto gen upon each run)                          ║
-// ║    └── models/      (default location)                                ║
 // ║                                                                       ║
 // ╚═══════════════════════════════════════════════════════════════════════╝
 
@@ -63,14 +63,16 @@ pub const DEFAULT_LAYOUT_KDL: &str = r#"layout {
 pub struct Config {
     pub llm: LlmConfig,
     pub persona: PersonaConfig,
-    #[allow(dead_code)]
-    pub expressions: ExpressionsConfig,
+    #[serde(alias = "expressions")]
+    pub idle: IdleConfig,
     pub snapshot: SnapshotConfig,
     #[allow(dead_code)]
     pub zellij: ZellijConfig,
     #[allow(dead_code)]
     #[serde(rename = "live-ascii")] // TOML [live-ascii] → Rust live_ascii
     pub live_ascii: LiveAsciiConfig,
+    #[serde(default)]
+    pub vts: VtsConfig,
     #[serde(default)]
     pub bar: BarConfig,
 }
@@ -132,9 +134,9 @@ pub struct PersonaConfig {
     /// "You are {name}." — the user owns the name.
     #[serde(default = "default_persona_name")]
     pub name: String,
-    /// A short description of the character's personality.  Format instructions,
-    /// the expression list, and the JSON template are all generated automatically
-    /// from the filesystem — the user should never put those here.
+    /// A short description of the character's personality.  Format instructions
+    /// and expression aliases come from `[vts.*_alias]` at startup — do not
+    /// put JSON format details here.
     #[serde(default = "default_persona_description")]
     pub description: String,
 }
@@ -145,7 +147,9 @@ pub struct LiveAsciiConfig {
     #[serde(default = "default_live_ascii_model")]
     pub model_set: PathBuf,
     #[serde(default = "default_true")]
-    pub enable_osf: bool,
+    pub enable_vts: bool,
+    #[serde(default = "default_vts_port")]
+    pub vts_port: u16,
     #[serde(default = "default_true")]
     pub enable_mouse: bool,
     #[serde(default = "default_true")]
@@ -164,14 +168,49 @@ pub struct LiveAsciiConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
-pub struct ExpressionsConfig {
-    #[serde(default = "default_expressions_dir")]
-    pub dir: PathBuf,
+pub struct IdleConfig {
     #[serde(default = "default_idle_timeout")]
     pub idle_timeout_secs: u64,
-    /// UDP port live-ascii listens on for OSF expression frames.
-    #[serde(default = "default_osf_port")]
-    pub osf_port: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct VtsConfig {
+    #[serde(default = "default_vts_url")]
+    pub url: String,
+    #[serde(default = "default_vts_plugin_name")]
+    pub plugin_name: String,
+    #[serde(default = "default_vts_developer")]
+    pub developer: String,
+    #[serde(default = "default_vts_auth_token_path")]
+    pub auth_token_path: PathBuf,
+    #[serde(default = "default_vts_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+    /// Friendly LLM labels mapped to one or more discovered expression hotkey keys.
+    /// TOML: `happy = "exp_01"` or `happy = ["exp_01", "exp_02"]`.
+    #[serde(default)]
+    pub expression_alias: HashMap<String, AliasAllowList>,
+    /// Friendly LLM labels mapped to one or more discovered motion hotkey keys.
+    /// TOML values are VTS hotkey names (e.g. `"Idle #2"`) or slug keys (`idle_2`).
+    #[serde(default)]
+    pub motion_alias: HashMap<String, AliasAllowList>,
+}
+
+/// TOML alias target: a single key or an allow-list of keys.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AliasAllowList {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl AliasAllowList {
+    pub fn keys(&self) -> Vec<String> {
+        match self {
+            AliasAllowList::One(key) => vec![key.clone()],
+            AliasAllowList::Many(keys) => keys.clone(),
+        }
+    }
 }
 
 fn default_history_length() -> usize {
@@ -186,8 +225,28 @@ fn default_bar_port() -> u16 {
     7879
 }
 
-fn default_osf_port() -> u16 {
-    11573
+fn default_vts_port() -> u16 {
+    8001
+}
+
+fn default_vts_url() -> String {
+    "ws://127.0.0.1:8001".into()
+}
+
+fn default_vts_plugin_name() -> String {
+    "Chobits".into()
+}
+
+fn default_vts_developer() -> String {
+    "Chobits".into()
+}
+
+fn default_vts_auth_token_path() -> PathBuf {
+    chobits_dir().join(".chobits").join("vts_token.json")
+}
+
+fn default_vts_connect_timeout_secs() -> u64 {
+    30
 }
 
 fn default_backend() -> String {
@@ -218,10 +277,6 @@ fn default_persona_description() -> String {
     "Curious and warm terminal companion. You speak in short, casual reactions —\
      one or two sentences max.  You genuinely care about what the user is working on."
         .into()
-}
-
-fn default_expressions_dir() -> PathBuf {
-    expressions_dir()
 }
 
 fn default_idle_timeout() -> u64 {
@@ -324,14 +379,16 @@ pub fn build_layout_kdl(params: &LayoutKdlParams<'_>) -> String {
 
 /// Build the `args` line for live-ascii from config.
 /// Generates individual tokens for the KDL `args` list:
-///   `"<model>" "--camera" "--mouse" "--physics" "--image-protocol" "<protocol>"`
+///   `"<model>" "--vts" "--vts-port" "<port>" "--mouse" ...`
 /// plus optional `--bg-color`, `--scale`, `--offsetx`, `--offsety`
 #[allow(dead_code)]
 pub fn live_ascii_args(cfg: &LiveAsciiConfig) -> String {
     let escaped_model = escape_kdl_path(&cfg.model_set);
     let mut parts = vec![format!("\"{}\"", escaped_model)];
-    if cfg.enable_osf {
-        parts.push("\"--camera\"".into());
+    if cfg.enable_vts {
+        parts.push("\"--vts\"".into());
+        parts.push("\"--vts-port\"".into());
+        parts.push(format!("\"{}\"", cfg.vts_port));
     }
     if cfg.enable_mouse {
         parts.push("\"--mouse\"".into());
@@ -446,7 +503,7 @@ pub fn find_wasm(name: &str) -> PathBuf {
 ///    Falls back to `.` if nothing is found.
 ///
 /// The sentinel is created by `build.sh` and serves as the definitive
-/// anchor for all other paths (`config.toml`, `expressions/`, `models/`,
+/// anchor for all other paths (`config.toml`, `models/`,
 /// `.zellij/`, `local/bin/`, `logs/`).
 ///
 /// Result is cached in a `OnceLock` — the first call does the filesystem walk,
@@ -488,11 +545,6 @@ pub fn config_path() -> PathBuf {
     chobits_dir().join("config.toml")
 }
 
-/// `<chobits-root>/expressions/`
-pub fn expressions_dir() -> PathBuf {
-    chobits_dir().join("expressions")
-}
-
 /// `<chobits-root>/logs/`
 pub fn log_dir() -> PathBuf {
     chobits_dir().join("logs")
@@ -524,13 +576,32 @@ pub fn expand_tilde(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Resolve a path coming from `config.toml` (e.g. `[expressions] dir`,
-/// `[live-ascii] model_set`):
+/// Resolve a path coming from `config.toml` (e.g. `[live-ascii] model_set`):
 /// - `~` / `~/...`   → expanded against the home directory
 /// - absolute path   → used as-is
 /// - relative path   → resolved against `<chobits-root>/`, *not* the
 ///   process's current working directory, since launching the exe (e.g. by
 ///   double-click) can leave CWD pointed at `bin/` rather than the root.
+pub fn warn_vts_port_mismatch(live_ascii: &LiveAsciiConfig, vts: &VtsConfig) {
+    let Some(url_port) = vts_url_port(&vts.url) else {
+        return;
+    };
+    if url_port != live_ascii.vts_port {
+        eprintln!(
+            "[config] [vts].url port ({url_port}) != [live-ascii].vts_port ({}) — keep them in sync",
+            live_ascii.vts_port
+        );
+    }
+}
+
+fn vts_url_port(url: &str) -> Option<u16> {
+    url.rsplit_once(':')?
+        .1
+        .trim_end_matches('/')
+        .parse()
+        .ok()
+}
+
 pub fn resolve_config_path(path: &Path) -> PathBuf {
     let s = path.to_string_lossy();
     if s == "~" || s.starts_with("~/") {
@@ -540,6 +611,20 @@ pub fn resolve_config_path(path: &Path) -> PathBuf {
         return path.to_path_buf();
     }
     chobits_dir().join(path)
+}
+
+impl Default for VtsConfig {
+    fn default() -> Self {
+        Self {
+            url: default_vts_url(),
+            plugin_name: default_vts_plugin_name(),
+            developer: default_vts_developer(),
+            auth_token_path: default_vts_auth_token_path(),
+            connect_timeout_secs: default_vts_connect_timeout_secs(),
+            expression_alias: HashMap::new(),
+            motion_alias: HashMap::new(),
+        }
+    }
 }
 
 impl Default for BarConfig {
@@ -560,9 +645,9 @@ impl Config {
         } else {
             Config::default_config()
         };
-        // Resolve dir/model paths relative to <chobits-root>, expanding `~` too.
-        config.expressions.dir = resolve_config_path(&config.expressions.dir);
+        // Resolve paths relative to <chobits-root>, expanding `~` too.
         config.live_ascii.model_set = resolve_config_path(&config.live_ascii.model_set);
+        config.vts.auth_token_path = resolve_config_path(&config.vts.auth_token_path);
         config.zellij.config_dir = resolve_config_path(&config.zellij.config_dir);
         config.zellij.data_dir = resolve_config_path(&config.zellij.data_dir);
         Ok(config)
@@ -586,10 +671,17 @@ impl Config {
                 name: default_persona_name(),
                 description: default_persona_description(),
             },
-            expressions: ExpressionsConfig {
-                dir: default_expressions_dir(),
+            idle: IdleConfig {
                 idle_timeout_secs: default_idle_timeout(),
-                osf_port: default_osf_port(),
+            },
+            vts: VtsConfig {
+                url: default_vts_url(),
+                plugin_name: default_vts_plugin_name(),
+                developer: default_vts_developer(),
+                auth_token_path: default_vts_auth_token_path(),
+                connect_timeout_secs: default_vts_connect_timeout_secs(),
+                expression_alias: HashMap::new(),
+                motion_alias: HashMap::new(),
             },
             zellij: ZellijConfig {
                 config_dir: default_zellij_config_dir(),
@@ -598,7 +690,8 @@ impl Config {
             },
             live_ascii: LiveAsciiConfig {
                 model_set: default_live_ascii_model(),
-                enable_osf: default_true(),
+                enable_vts: default_true(),
+                vts_port: default_vts_port(),
                 enable_mouse: default_true(),
                 enable_physics: default_true(),
                 image_protocol: default_image_protocol(),
@@ -685,7 +778,7 @@ mod tests {
             interval_secs: 15,
             max_bytes: 4096,
             snapshot_port: chobits_meta::DEFAULT_SNAPSHOT_PORT,
-            live_ascii_args: r#""model.json" "--camera""#,
+            live_ascii_args: r#""model.json" "--vts" "--vts-port" "8001""#,
             live_ascii_bin: Path::new(r"C:\Chobits\local\bin\live-ascii.exe"),
             chobits_bar_bin: Path::new(r"C:\Chobits\local\bin\chobits-bar.exe"),
         };
@@ -693,14 +786,15 @@ mod tests {
         assert!(out.contains(r"C:\\Chobits\\bin\\chobits.exe"));
         assert!(out.contains(r"C:\\Chobits\\local\\bin\\plugin.wasm"));
         assert!(out.contains("secs=15"));
-        assert!(out.contains(r#""model.json" "--camera""#));
+        assert!(out.contains(r#""model.json" "--vts" "--vts-port" "8001""#));
     }
 
     #[test]
     fn live_ascii_args_includes_defaults() {
         let cfg = LiveAsciiConfig {
             model_set: PathBuf::from("models/hiyori.model3.json"),
-            enable_osf: true,
+            enable_vts: true,
+            vts_port: 8001,
             enable_mouse: true,
             enable_physics: true,
             image_protocol: "halfblock".into(),
@@ -711,7 +805,9 @@ mod tests {
         };
         let args = live_ascii_args(&cfg);
         assert!(args.contains(r#""models/hiyori.model3.json""#));
-        assert!(args.contains("\"--camera\""));
+        assert!(args.contains("\"--vts\""));
+        assert!(args.contains("\"--vts-port\""));
+        assert!(args.contains("\"8001\""));
         assert!(args.contains("\"--mouse\""));
         assert!(args.contains("\"--physics\""));
         assert!(args.contains("\"--image-protocol\""));
@@ -723,7 +819,8 @@ mod tests {
     fn live_ascii_args_includes_optional_overrides() {
         let cfg = LiveAsciiConfig {
             model_set: PathBuf::from("m.json"),
-            enable_osf: false,
+            enable_vts: false,
+            vts_port: 8001,
             enable_mouse: false,
             enable_physics: false,
             image_protocol: "kitty".into(),
@@ -733,7 +830,7 @@ mod tests {
             offset_y: "20%".into(),
         };
         let args = live_ascii_args(&cfg);
-        assert!(!args.contains("--camera"));
+        assert!(!args.contains("--vts"));
         assert!(!args.contains("--mouse"));
         assert!(!args.contains("--physics"));
         assert!(args.contains("\"kitty\""));
@@ -776,5 +873,34 @@ layout {
         let layout = load_layout_from_config(&path);
         assert!(layout.contains("plugin location=\"tab-bar\""));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn vts_alias_tables_parse_from_toml() {
+        let cfg: VtsConfig = toml::from_str(
+            r#"
+url = "ws://127.0.0.1:8001"
+
+[expression_alias]
+happy = "exp_01"
+
+[motion_alias]
+idle = ["idle_0", "idle_1"]
+wave = "tap_0"
+"#,
+        )
+        .expect("parse config");
+        assert_eq!(
+            cfg.expression_alias.get("happy"),
+            Some(&AliasAllowList::One("exp_01".into()))
+        );
+        assert_eq!(
+            cfg.motion_alias.get("idle"),
+            Some(&AliasAllowList::Many(vec!["idle_0".into(), "idle_1".into()]))
+        );
+        assert_eq!(
+            cfg.motion_alias.get("wave"),
+            Some(&AliasAllowList::One("tap_0".into()))
+        );
     }
 }

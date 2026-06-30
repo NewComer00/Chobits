@@ -27,3 +27,4 @@ gag = "1"
 directories = "5"
 rand = "0.10"
 jsonrepair-rs = { version = "0.2.1", features = ["serde"] }
+vtubestudio = "0.9"

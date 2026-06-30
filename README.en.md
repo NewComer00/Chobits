@@ -204,7 +204,7 @@ cd Chobits
 <details>
 <summary>Click to expand manual build instructions</summary>
 
-Create the local directory `install/Chobits/` to hold all binaries, configurations, Live2D models and expressions:
+Create the local directory `install/Chobits/` to hold all binaries, configurations, and Live2D models:
 
 ```bash
 mkdir -p install/Chobits
@@ -258,10 +258,10 @@ Now you should have `live-ascii` and `zellij` binaries in `install/Chobits/local
 
 #### Expressions
 
-Place the pre-recorded expressions (OSF binary dumps) in `install/Chobits/expressions/`:
+Configure motion/expression aliases in `config.toml` (see `[vts.motion_alias]`). Inspect available VTS hotkeys with:
 
 ```bash
-cp -r expressions install/Chobits/
+python tool/list_vts_hotkeys.py
 ```
 
 #### Live2D Models
@@ -311,15 +311,8 @@ Chobits/
 │   └── chobits-start          # .exe on Windows
 ├── config.toml
 ├── .zellij/                   # Zellij config/data ([zellij] paths)
-├── expressions/
-│   ├── blink.osf.bin
-│   ├── happy.osf.bin
-│   ├── lookaroud.osf.bin
-│   ├── neutral.osf.bin
-│   ├── sad.osf.bin
-│   ├── stretch.osf.bin
-│   ├── surprised.osf.bin
-│   └── thinking.osf.bin
+├── .chobits/
+│   └── vts_token.json           # saved VTS plugin auth token (auto-created)
 ├── local/
 │   └── bin/
 │       ├── chobits
@@ -439,7 +432,8 @@ When the live-ascii pane has focus, use the arrow keys or mouse drag to move the
 |       Key        |      Default      |               Description               |
 | ---------------- | ----------------- | --------------------------------------- |
 | `model_set`      | (empty)           | Path to `.model3.json` file             |
-| `enable_osf`     | `true`            | `--camera` (accept OSF frames)          |
+| `enable_vts`     | `true`            | `--vts` (VTS API server for hotkeys)    |
+| `vts_port`       | `8001`            | `--vts-port`                            |
 | `enable_mouse`   | `true`            | `--mouse` (drag to pan, scroll to zoom) |
 | `enable_physics` | `true`            | `--physics` (hair/wind physics)         |
 | `image_protocol` | `"halfblock"`     | `halfblock`, `kitty`, or `sixel`        |
@@ -453,7 +447,8 @@ Bundled example (Hiyori-tuned scale/offset):
 ```toml
 [live-ascii]
 model_set      = "models/hiyori_free/runtime/hiyori_free_t08.model3.json"
-enable_osf     = true
+enable_vts     = true
+vts_port       = 8001
 enable_mouse   = true
 enable_physics = true
 image_protocol = "halfblock"
@@ -516,25 +511,53 @@ layout {
 └─────────────────────┴──────────┘
 ```
 
-### `[expressions]` — OSF Expression Files
+### `[idle]` — Idle Behavior
 
-Maps expression names to OSF binary dumps. The daemon scans `.osf.bin` files here and feeds the list to the LLM so it can pick one in each response.
+Controls idle monologue timing. Only labels listed in `[vts.motion_alias]` / `[vts.expression_alias]` are sent to the LLM.
 
-If the current Zellij pane has not changed for `idle_timeout_secs` seconds, the character will become idle.
-
-Users can add more expressions to the directory by [recording](#tools) them with [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) running.
-
-|         Key         |     Default     |                       Description                        |
-| ------------------- | --------------- | -------------------------------------------------------- |
-| `dir`               | `"expressions"` | Folder containing `.osf.bin` files                       |
-| `idle_timeout_secs` | `30`            | Seconds of pane inactivity before idle behavior          |
-| `osf_port`          | `11573`         | UDP port live-ascii listens on for OSF frames (optional) |
+|         Key         | Default |                       Description                        |
+| ------------------- | ------- | -------------------------------------------------------- |
+| `idle_timeout_secs` | `30`    | Seconds of pane inactivity before idle behavior          |
 
 ```toml
-[expressions]
-dir               = "expressions"
+[idle]
 idle_timeout_secs = 30
-# osf_port        = 11573   # optional; default shown above
+```
+
+Legacy configs may still use `[expressions]` with the same key.
+
+### `[vts]` — VTS Plugin Client
+
+The daemon connects to live-ascii's built-in [VTube Studio API](https://github.com/NewComer00/live-ascii) server as a plugin client to trigger hotkeys.
+
+|           Key            |                Default                 |                    Description                     |
+| ------------------------ | -------------------------------------- | -------------------------------------------------- |
+| `url`                    | `"ws://127.0.0.1:8001"`                | VTS WebSocket URL (port should match `vts_port`)   |
+| `plugin_name`            | `"Chobits"`                            | Plugin name shown in VTS                           |
+| `developer`              | `"Chobits"`                            | Developer name for authentication                  |
+| `auth_token_path`        | `".chobits/vts_token.json"`            | Saved auth token (auto-created on first connect)   |
+| `connect_timeout_secs`   | `30`                                   | Retry connecting until live-ascii VTS is ready     |
+
+Map friendly LLM labels to VTS hotkey names (the `name` column from `list_vts_hotkeys.py`) or internal slugs (e.g. `idle_2`). Array values pick randomly at runtime.
+
+```toml
+[vts]
+url                  = "ws://127.0.0.1:8001"
+plugin_name          = "Chobits"
+developer            = "Chobits"
+auth_token_path      = ".chobits/vts_token.json"
+connect_timeout_secs = 30
+
+[vts.motion_alias]
+idle      = "Idle #2"
+happy     = "Idle #1"
+thinking  = "Flick #0"       # wait-loop while LLM runs; also an LLM alias
+worried   = "Flickdown #0"
+surprised = "Tap #0"
+sad       = "Flick@Body #0"
+
+# Models with .exp3.json expressions can add [vts.expression_alias]
+# happy = "My Expression Name"
 ```
 
 </details>
@@ -593,11 +616,11 @@ with the correct isolated paths — no need to know where they are.
 
 `chobits-start` launches Zellij with the daemon, live-ascii, chobits-bar, and the `chobits-zellij` WASM plugin. Default localhost ports:
 
-|  Port   |        Config key        | Protocol |            Purpose             |
-| ------- | ------------------------ | -------- | ------------------------------ |
-| `7880`  | `[snapshot] port`        | HTTP     | Plugin → daemon snapshots      |
-| `7879`  | `[bar] port`             | TCP      | Daemon → chobits-bar reactions |
-| `11573` | `[expressions] osf_port` | UDP      | Daemon → live-ascii OSF frames |
+|  Port   |        Config key        | Protocol  |            Purpose             |
+| ------- | ------------------------ | --------- | ------------------------------ |
+| `7880`  | `[snapshot] port`        | HTTP      | Plugin → daemon snapshots      |
+| `7879`  | `[bar] port`             | TCP       | Daemon → chobits-bar reactions |
+| `8001`  | `[vts] url` / `[live-ascii] vts_port` | WebSocket | Daemon → live-ascii VTS API |
 
 **Data flow** (while a client is attached):
 
@@ -608,7 +631,7 @@ chobits-zellij ──get_pane_scrollback──▶ snapshot JSON
                       │
                       └──HTTP POST :7880──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
                                               ├── HTTP REST ──▶ LLM backend
-                                              └── UDP:11573 ──▶ live-ascii
+                                              └── WebSocket:8001 ──▶ live-ascii (--vts)
 ```
 
 When no client is attached (detached), the plugin skips pane polling.
@@ -629,7 +652,7 @@ flowchart TB
 
     Terminal -->|"HTTP POST :7880"| Daemon
     Daemon -->|"HTTP REST"| LLM
-    Daemon -->|"UDP :11573"| LiveAscii
+    Daemon -->|"WebSocket :8001"| LiveAscii
     Daemon -->|"TCP :7879"| Bar
 ```
 
@@ -640,28 +663,23 @@ flowchart TB
 | chobits-zellij → chobits | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | one-way   |
 | chobits → LLM            | HTTP REST (Ollama or OpenAI-compatible)                    | req/reply |
 | chobits → chobits-bar    | TCP `:7879` (default), newline-delimited text              | one-way   |
-| chobits → live-ascii     | UDP `:11573` (default), OSF frames                         | one-way   |
+| chobits → live-ascii     | WebSocket `:8001` (default), VTS `HotkeyTriggerRequest`    | one-way   |
 
 ## Tools
 
 |                Tool                 |               Description                |
 | ----------------------------------- | ---------------------------------------- |
-| `tool/openseeface_record_packet.py` | Capture raw OSF UDP frames to `.osf.bin` |
-| `tool/openseeface_play_packet.py`   | Playback `.osf.bin` over UDP for testing |
+| `tool/list_vts_hotkeys.py`          | List live-ascii VTS hotkeys for configuring `[vts.*_alias]` |
 
-Both tools use UDP port `11573` by default (same as `[expressions] osf_port`).
-
-Record from a live OpenSeeFace session:
+List hotkeys from a running live-ascii instance (requires `pip install websockets`):
 
 ```bash
-python tool/openseeface_record_packet.py neutral.osf.bin
+# Terminal 1: live-ascii with --vts on your model
+# Terminal 2:
+python tool/list_vts_hotkeys.py
 ```
 
-Test playback independently:
-
-```bash
-python tool/openseeface_play_packet.py neutral.osf.bin --loop
-```
+Copy the printed hotkey names into `[vts.motion_alias]` / `[vts.expression_alias]` in `config.toml`.
 
 ## Related Projects
 

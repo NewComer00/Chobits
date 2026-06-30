@@ -170,9 +170,6 @@ else
     echo "Skipping hiyori model (already exists)"
 fi
 
-# Expressions
-cp -r expressions "$DEST"/
-
 # Example config (only if not already present)
 if [[ ! -f "$DEST/config.toml" ]]; then
     cp example_config.toml "$DEST/config.toml"

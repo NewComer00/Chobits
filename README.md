@@ -256,12 +256,12 @@ cargo install zellij --version ${ZELLIJ_VER} --root install/Chobits/local
 
 完成后 `install/Chobits/local/bin/` 中应同时包含 `live-ascii` 和 `zellij`。
 
-#### 表情文件
+#### 表情与动作
 
-将预录表情（OSF 二进制文件）复制到 `install/Chobits/expressions/`：
+启动时从 live-ascii VTS 热键**自动发现**动作/表情。在 `config.toml` 的 `[vts.motion_alias]` / `[vts.expression_alias]` 中配置 LLM 可用的友好标签即可，无需 manifest 文件。
 
 ```bash
-cp -r expressions install/Chobits/
+python tool/list_vts_hotkeys.py   # 查看当前模型的 VTS 热键名称
 ```
 
 #### Live2D 模型
@@ -311,15 +311,8 @@ Chobits/
 │   └── chobits-start          # Windows 下为 .exe
 ├── config.toml
 ├── .zellij/                   # Zellij 配置/数据（[zellij] 路径）
-├── expressions/
-│   ├── blink.osf.bin
-│   ├── happy.osf.bin
-│   ├── lookaroud.osf.bin
-│   ├── neutral.osf.bin
-│   ├── sad.osf.bin
-│   ├── stretch.osf.bin
-│   ├── surprised.osf.bin
-│   └── thinking.osf.bin
+├── .chobits/
+│   └── vts_token.json           # VTS 插件认证 token（首次连接后自动创建）
 ├── local/
 │   └── bin/
 │       ├── chobits
@@ -439,7 +432,8 @@ history_length = 50
 |        键        |      默认值       |              说明               |
 | ---------------- | ----------------- | ------------------------------- |
 | `model_set`      | （空）            | `.model3.json` 文件路径         |
-| `enable_osf`     | `true`            | `--camera`（接收 OSF 帧）       |
+| `enable_vts`     | `true`            | `--vts`（VTS API 热键服务器）   |
+| `vts_port`       | `8001`            | `--vts-port`                    |
 | `enable_mouse`   | `true`            | `--mouse`（拖动平移，滚轮缩放） |
 | `enable_physics` | `true`            | `--physics`（发丝/风力物理）    |
 | `image_protocol` | `"halfblock"`     | `halfblock`、`kitty` 或 `sixel` |
@@ -453,7 +447,8 @@ history_length = 50
 ```toml
 [live-ascii]
 model_set      = "models/hiyori_free/runtime/hiyori_free_t08.model3.json"
-enable_osf     = true
+enable_vts     = true
+vts_port       = 8001
 enable_mouse   = true
 enable_physics = true
 image_protocol = "halfblock"
@@ -516,25 +511,53 @@ layout {
 └─────────────────────┴──────────┘
 ```
 
-### `[expressions]` — OSF 表情文件
+### `[idle]` — 待机行为
 
-将表情名称映射到 OSF 二进制文件。守护进程扫描此目录下的 `.osf.bin` 文件，并将列表提供给 LLM，以便在每次响应中选择合适的表情。
+控制待机独白计时。只有 `[vts.motion_alias]` / `[vts.expression_alias]` 中配置的标签会提供给 LLM。
 
-若当前 Zellij 面板在 `idle_timeout_secs` 秒内未发生变化，角色将进入待机状态。
-
-用户可以通过使用 [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) [录制](#工具)新的表情文件来扩充表情库。
-
-|         键          |     默认值      |                   说明                    |
-| ------------------- | --------------- | ----------------------------------------- |
-| `dir`               | `"expressions"` | 存放 `.osf.bin` 文件的目录                |
-| `idle_timeout_secs` | `30`            | 面板无变化多少秒后进入待机状态            |
-| `osf_port`          | `11573`         | live-ascii 监听 OSF 帧的 UDP 端口（可选） |
+|         键          |  默认值  |                   说明                    |
+| ------------------- | -------- | ----------------------------------------- |
+| `idle_timeout_secs` | `30`     | 面板无变化多少秒后进入待机状态            |
 
 ```toml
-[expressions]
-dir               = "expressions"
+[idle]
 idle_timeout_secs = 30
-# osf_port        = 11573   # 可选，默认值如上
+```
+
+旧版配置仍可使用 `[expressions]` 段（字段相同）。
+
+### `[vts]` — VTS 插件客户端
+
+守护进程作为插件客户端连接 live-ascii 内置的 [VTube Studio API](https://github.com/NewComer00/live-ascii) 服务器，触发热键。
+
+|           键           |                默认值                 |                    说明                     |
+| ---------------------- | --------------------------------------- | ------------------------------------------- |
+| `url`                  | `"ws://127.0.0.1:8001"`                 | VTS WebSocket 地址（端口应与 `vts_port` 一致） |
+| `plugin_name`          | `"Chobits"`                             | VTS 中显示的插件名称                        |
+| `developer`            | `"Chobits"`                             | 认证用的开发者名称                          |
+| `auth_token_path`      | `".chobits/vts_token.json"`             | 保存的认证 token（首次连接后自动创建）      |
+| `connect_timeout_secs` | `30`                                    | 等待 live-ascii VTS 就绪的重试超时（秒）    |
+
+将友好标签映射到 VTS 热键名称（`list_vts_hotkeys.py` 输出的 `name` 列）或内部 slug（如 `idle_2`）。数组值表示多个热键，运行时随机选取。
+
+```toml
+[vts]
+url                  = "ws://127.0.0.1:8001"
+plugin_name          = "Chobits"
+developer            = "Chobits"
+auth_token_path      = ".chobits/vts_token.json"
+connect_timeout_secs = 30
+
+[vts.motion_alias]
+idle      = "Idle #2"
+happy     = "Idle #1"
+thinking  = "Flick #0"       # LLM 等待动画；也用于 LLM 响应中的 thinking 标签
+worried   = "Flickdown #0"
+surprised = "Tap #0"
+sad       = "Flick@Body #0"
+
+# 带 .exp3.json 表情的模型可添加 [vts.expression_alias]
+# happy = "My Expression Name"
 ```
 
 </details>
@@ -586,11 +609,11 @@ chobits-start zellij --help
 
 `chobits-start` 启动 Zellij，其中运行守护进程、live-ascii、chobits-bar 和 `chobits-zellij` WASM 插件。默认本地端口：
 
-|  端口   |          配置键          | 协议 |             用途             |
-| ------- | ------------------------ | ---- | ---------------------------- |
-| `7880`  | `[snapshot] port`        | HTTP | 插件 → 守护进程快照          |
-| `7879`  | `[bar] port`             | TCP  | 守护进程 → chobits-bar 反应  |
-| `11573` | `[expressions] osf_port` | UDP  | 守护进程 → live-ascii OSF 帧 |
+|  端口   |          配置键          |   协议    |             用途             |
+| ------- | ------------------------ | --------- | ---------------------------- |
+| `7880`  | `[snapshot] port`        | HTTP      | 插件 → 守护进程快照          |
+| `7879`  | `[bar] port`             | TCP       | 守护进程 → chobits-bar 反应  |
+| `8001`  | `[vts] url` / `[live-ascii] vts_port` | WebSocket | 守护进程 → live-ascii VTS API |
 
 **数据流**（客户端连接时）：
 
@@ -601,7 +624,7 @@ chobits-zellij ──get_pane_scrollback──▶ 快照 JSON
                       │
                       └──HTTP POST :7880──▶ chobits ──┬── TCP:7879 ──▶ chobits-bar
                                               ├── HTTP REST ──▶ LLM 后端
-                                              └── UDP:11573 ──▶ live-ascii
+                                              └── WebSocket:8001 ──▶ live-ascii (--vts)
 ```
 
 客户端分离（detach）时，插件跳过面板轮询。
@@ -622,7 +645,7 @@ flowchart TB
 
     Terminal -->|"HTTP POST :7880"| Daemon
     Daemon -->|"HTTP REST"| LLM
-    Daemon -->|"UDP :11573"| LiveAscii
+    Daemon -->|"WebSocket :8001"| LiveAscii
     Daemon -->|"TCP :7879"| Bar
 ```
 
@@ -633,28 +656,23 @@ flowchart TB
 | chobits-zellij → chobits | Zellij `web_request` → HTTP POST `127.0.0.1:7880/snapshot` | 单向      |
 | chobits → LLM            | HTTP REST（Ollama 或 OpenAI 兼容）                         | 请求/响应 |
 | chobits → chobits-bar    | TCP `:7879`（默认），换行符分隔文本                        | 单向      |
-| chobits → live-ascii     | UDP `:11573`（默认），OSF 帧                               | 单向      |
+| chobits → live-ascii     | WebSocket `:8001`（默认），VTS `HotkeyTriggerRequest`      | 单向      |
 
 ## 工具
 
 |                工具                 |                  说明                   |
 | ----------------------------------- | --------------------------------------- |
-| `tool/openseeface_record_packet.py` | 将 OSF UDP 原始帧录制为 `.osf.bin` 文件 |
-| `tool/openseeface_play_packet.py`   | 通过 UDP 回放 `.osf.bin` 文件，用于测试 |
+| `tool/list_vts_hotkeys.py`          | 列出 live-ascii VTS 热键，用于填写 `[vts.*_alias]` |
 
-两个工具默认使用 UDP 端口 `11573`（与 `[expressions] osf_port` 一致）。
-
-从实时 OpenSeeFace 会话录制表情：
+从运行中的 live-ascii 实例查询热键（需要 `pip install websockets`）：
 
 ```bash
-python tool/openseeface_record_packet.py neutral.osf.bin
+# 终端 1：带 --vts 启动 live-ascii
+# 终端 2：
+python tool/list_vts_hotkeys.py
 ```
 
-独立测试回放：
-
-```bash
-python tool/openseeface_play_packet.py neutral.osf.bin --loop
-```
+将输出的热键 `name` 填入 `config.toml` 的 `[vts.motion_alias]` 或 `[vts.expression_alias]`。
 
 ## 相关项目
 

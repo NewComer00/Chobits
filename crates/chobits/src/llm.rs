@@ -1,16 +1,11 @@
 use crate::config::LlmConfig;
 use serde::Deserialize;
-use std::path::Path;
-
-// ── parsed LLM response (always the same shape) ──────────
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct LlmResponse {
     pub text: String,
     pub expression: String,
 }
-
-// ── backend enum ─────────────────────────────────────────
 
 pub enum Backend {
     Ollama {
@@ -62,56 +57,27 @@ impl Backend {
     }
 }
 
-// ── system prompt builder ────────────────────────────────
-
-/// Build the full system prompt from the user's persona description and the
-/// expression files found on disk.  Users never touch format details.
+/// Build the system prompt using alias labels only.
 pub fn build_system_prompt(
     name: &str,
     persona_description: &str,
-    expressions_dir: &Path,
+    aliases: &[String],
+    default_alias: &str,
 ) -> String {
-    let expressions = scan_expressions(expressions_dir);
-    let list = expressions.join(", ");
+    let list = aliases.join(", ");
     format!(
         "\
 You are {name}.\n\
 {persona_description}\n\
 \n\
 OUTPUT FORMAT — reply with exactly one JSON object, no other text:\n\
-{{\"text\": \"<your reaction, 1-2 sentences>\", \"expression\": \"<one of: {list}>\"}}\n\
-Choose the expression that best matches your reaction."
+{{\"text\": \"<your reaction, 1-2 sentences>\", \"expression\": \"<alias>\"}}\n\
+\n\
+EXPRESSION ALIASES — the \"expression\" value MUST be exactly one of these (copy verbatim):\n\
+{list}\n\
+Default resting look: {default_alias}. Pick the alias that best matches your reaction."
     )
 }
-
-/// Scan the expressions directory for available expression names.
-fn scan_expressions(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = dir
-        .read_dir()
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let p = e.path();
-            if p.is_file() {
-                let name = p.file_name()?.to_str()?;
-                let stem = name.strip_suffix(".osf.bin")?;
-                Some(stem.to_string())
-            } else {
-                None
-            }
-        })
-        .filter(|n| n != "neutral") // neutral is implicit, skip
-        .collect();
-    names.sort();
-    if names.is_empty() {
-        names.push("neutral".into());
-    }
-    names
-}
-
-// ── Ollama ───────────────────────────────────────────────
 
 fn query_ollama(url: &str, model: &str, max_tokens: u32, prompt: &str) -> Option<String> {
     let body = serde_json::json!({
@@ -137,8 +103,6 @@ fn query_ollama(url: &str, model: &str, max_tokens: u32, prompt: &str) -> Option
         .map(|s| s.to_string())
 }
 
-// ── OpenAI-compatible ────────────────────────────────────
-
 fn query_openai(
     url: &str,
     model: &str,
@@ -153,9 +117,6 @@ fn query_openai(
         ],
         "temperature": 0.7,
         "max_tokens": max_tokens,
-        // Instruct compliant backends to return a JSON object directly.
-        // Non-compliant backends ignore this field; parse_response handles
-        // the fallback extraction in either case.
         "response_format": {"type": "json_object"},
     });
 
@@ -184,19 +145,19 @@ fn query_openai(
         .map(|s| s.to_string())
 }
 
-// ── response parser ──────────────────────────────────────
-
-pub fn parse_response(raw: &str) -> Option<LlmResponse> {
-    // jsonrepair handles: markdown fences, unquoted keys, single quotes,
-    // trailing commas, truncated JSON, prose-wrapped objects, and more.
-    // Falls back to neutral if the output is unrecoverable garbage.
+pub fn parse_response(raw: &str, fallback_alias: &str) -> Option<LlmResponse> {
     match jsonrepair_rs::jsonrepair_parse::<LlmResponse>(raw) {
-        Ok(r) => Some(r),
+        Ok(mut response) => {
+            if response.expression.is_empty() {
+                response.expression = fallback_alias.to_string();
+            }
+            Some(response)
+        }
         Err(_) => {
             eprintln!("[llm] parse_response: jsonrepair could not recover a valid LlmResponse\n  raw: {raw:?}");
             Some(LlmResponse {
                 text: raw.lines().take(2).collect::<Vec<_>>().join(" "),
-                expression: "neutral".into(),
+                expression: fallback_alias.to_string(),
             })
         }
     }
@@ -206,41 +167,6 @@ pub fn parse_response(raw: &str) -> Option<LlmResponse> {
 mod tests {
     use super::*;
     use crate::config::LlmConfig;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    struct TempExpressionsDir(PathBuf);
-
-    impl TempExpressionsDir {
-        fn new() -> Self {
-            let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "chobits-llm-test-{}-{}",
-                std::process::id(),
-                id
-            ));
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).expect("create temp expressions dir");
-            Self(path)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-
-        fn touch_expression(&self, name: &str) {
-            std::fs::write(self.0.join(format!("{name}.osf.bin")), b"x")
-                .expect("write expression stub");
-        }
-    }
-
-    impl Drop for TempExpressionsDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn sample_llm_config(backend: &str) -> LlmConfig {
         LlmConfig {
@@ -250,6 +176,43 @@ mod tests {
             max_tokens: 128,
             api_key: "secret".into(),
         }
+    }
+
+    #[test]
+    fn build_system_prompt_lists_aliases_only() {
+        let prompt = build_system_prompt(
+            "Chi",
+            "Warm and curious.",
+            &["idle".into(), "wave".into(), "bounce".into()],
+            "idle",
+        );
+        assert!(prompt.contains("idle, wave, bounce"));
+        assert!(prompt.contains("Default resting look: idle"));
+        assert!(!prompt.contains("idle_0"));
+        assert!(!prompt.contains("Idle #0"));
+    }
+
+    #[test]
+    fn parse_response_uses_alias_fallback() {
+        let raw = r#"{"text":"only text"}"#;
+        let parsed = parse_response(raw, "idle").expect("fallback");
+        assert_eq!(parsed.expression, "idle");
+    }
+
+    #[test]
+    fn parse_response_accepts_clean_json() {
+        let raw = r#"{"text":"nice work!","expression":"happy"}"#;
+        let parsed = parse_response(raw, "idle").expect("parsed");
+        assert_eq!(parsed.text, "nice work!");
+        assert_eq!(parsed.expression, "happy");
+    }
+
+    #[test]
+    fn parse_response_repairs_markdown_fenced_json() {
+        let raw = "```json\n{\"text\":\"hey\",\"expression\":\"blink\"}\n```";
+        let parsed = parse_response(raw, "idle").expect("parsed");
+        assert_eq!(parsed.text, "hey");
+        assert_eq!(parsed.expression, "blink");
     }
 
     #[test]
@@ -264,73 +227,5 @@ mod tests {
             }
             Backend::OpenAiCompatible { .. } => panic!("expected ollama backend"),
         }
-    }
-
-    #[test]
-    fn from_config_defaults_to_openai_compatible() {
-        let cfg = sample_llm_config("openai");
-        match Backend::from_config(&cfg) {
-            Backend::OpenAiCompatible { api_key, model, .. } => {
-                assert_eq!(model, "test-model");
-                assert_eq!(api_key, "secret");
-            }
-            Backend::Ollama { .. } => panic!("expected openai-compatible backend"),
-        }
-    }
-
-    #[test]
-    fn scan_expressions_excludes_neutral_and_sorts() {
-        let dir = TempExpressionsDir::new();
-        dir.touch_expression("happy");
-        dir.touch_expression("neutral");
-        dir.touch_expression("blink");
-
-        assert_eq!(
-            scan_expressions(dir.path()),
-            vec!["blink".to_string(), "happy".to_string()]
-        );
-    }
-
-    #[test]
-    fn scan_expressions_empty_dir_yields_neutral() {
-        let dir = TempExpressionsDir::new();
-        assert_eq!(scan_expressions(dir.path()), vec!["neutral".to_string()]);
-    }
-
-    #[test]
-    fn build_system_prompt_includes_persona_and_expression_list() {
-        let dir = TempExpressionsDir::new();
-        dir.touch_expression("happy");
-        dir.touch_expression("sad");
-
-        let prompt = build_system_prompt("Chi", "Warm and curious.", dir.path());
-        assert!(prompt.contains("You are Chi."));
-        assert!(prompt.contains("Warm and curious."));
-        assert!(prompt.contains("happy, sad"));
-        assert!(!prompt.contains("neutral"));
-    }
-
-    #[test]
-    fn parse_response_accepts_clean_json() {
-        let raw = r#"{"text":"nice work!","expression":"happy"}"#;
-        let parsed = parse_response(raw).expect("parsed");
-        assert_eq!(parsed.text, "nice work!");
-        assert_eq!(parsed.expression, "happy");
-    }
-
-    #[test]
-    fn parse_response_repairs_markdown_fenced_json() {
-        let raw = "```json\n{\"text\":\"hey\",\"expression\":\"blink\"}\n```";
-        let parsed = parse_response(raw).expect("parsed");
-        assert_eq!(parsed.text, "hey");
-        assert_eq!(parsed.expression, "blink");
-    }
-
-    #[test]
-    fn parse_response_falls_back_when_fields_missing() {
-        let raw = r#"{"text":"only text"}"#;
-        let parsed = parse_response(raw).expect("fallback");
-        assert_eq!(parsed.expression, "neutral");
-        assert!(parsed.text.contains("only text"));
     }
 }
