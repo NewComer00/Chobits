@@ -42,10 +42,7 @@ mod tests {
 
     #[test]
     fn empty_becomes_loopback_defaults() {
-        assert_eq!(
-            no_proxy_with_loopback(""),
-            "127.0.0.1,localhost,::1"
-        );
+        assert_eq!(no_proxy_with_loopback(""), "127.0.0.1,localhost,::1");
     }
 
     #[test]

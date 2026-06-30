@@ -595,11 +595,7 @@ pub fn warn_vts_port_mismatch(live_ascii: &LiveAsciiConfig, vts: &VtsConfig) {
 }
 
 fn vts_url_port(url: &str) -> Option<u16> {
-    url.rsplit_once(':')?
-        .1
-        .trim_end_matches('/')
-        .parse()
-        .ok()
+    url.rsplit_once(':')?.1.trim_end_matches('/').parse().ok()
 }
 
 pub fn resolve_config_path(path: &Path) -> PathBuf {
@@ -896,7 +892,10 @@ wave = "tap_0"
         );
         assert_eq!(
             cfg.motion_alias.get("idle"),
-            Some(&AliasAllowList::Many(vec!["idle_0".into(), "idle_1".into()]))
+            Some(&AliasAllowList::Many(vec![
+                "idle_0".into(),
+                "idle_1".into()
+            ]))
         );
         assert_eq!(
             cfg.motion_alias.get("wave"),

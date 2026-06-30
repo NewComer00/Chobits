@@ -311,11 +311,9 @@ fn default_alias_for_key(key: &str, alias_allow: &HashMap<String, Vec<String>>) 
 }
 
 fn alias_for_key(key: &str, alias_allow: &HashMap<String, Vec<String>>) -> Option<String> {
-    alias_allow.iter().find_map(|(alias, keys)| {
-        keys.iter()
-            .any(|k| k == key)
-            .then_some(alias.clone())
-    })
+    alias_allow
+        .iter()
+        .find_map(|(alias, keys)| keys.iter().any(|k| k == key).then_some(alias.clone()))
 }
 
 fn loop_name_for_key(key: &str, alias_allow: &HashMap<String, Vec<String>>) -> String {
@@ -364,9 +362,7 @@ fn pick_allow_list_key(keys: &[String]) -> String {
     if keys.len() == 1 {
         return keys[0].clone();
     }
-    keys.choose(&mut rand::rng())
-        .cloned()
-        .unwrap_or_default()
+    keys.choose(&mut rand::rng()).cloned().unwrap_or_default()
 }
 
 fn resolve_llm_alias(
@@ -506,7 +502,11 @@ fn normalize_label(name: &str) -> Option<String> {
         }
     }
     let slug = slugify(&s);
-    if slug.is_empty() { None } else { Some(slug) }
+    if slug.is_empty() {
+        None
+    } else {
+        Some(slug)
+    }
 }
 
 fn file_stem_key(file: &str) -> Option<String> {
@@ -518,7 +518,11 @@ fn file_stem_key(file: &str) -> Option<String> {
         stem = Path::new(&stem).file_stem()?.to_str()?.to_string();
     }
     let slug = slugify(&stem);
-    if slug.is_empty() { None } else { Some(slug) }
+    if slug.is_empty() {
+        None
+    } else {
+        Some(slug)
+    }
 }
 
 fn slugify(s: &str) -> String {
@@ -613,7 +617,10 @@ fn pick_default_loop_key(
     fallback: &str,
     alias_allow: &HashMap<String, Vec<String>>,
 ) -> String {
-    if let Some(key) = loopable_idle_alias_keys(cache, alias_allow).into_iter().next() {
+    if let Some(key) = loopable_idle_alias_keys(cache, alias_allow)
+        .into_iter()
+        .next()
+    {
         return key;
     }
     loopable_keys_in_order(cache, discovery_order)
@@ -678,9 +685,7 @@ fn register_alias(
     let mut keys = Vec::new();
     for target in targets {
         let Some(key) = lookup_cache_key(cache, target) else {
-            eprintln!(
-                "[vts] {kind_name} alias {label:?} targets unknown hotkey {target:?}"
-            );
+            eprintln!("[vts] {kind_name} alias {label:?} targets unknown hotkey {target:?}");
             continue;
         };
         let entry = &cache[&key];
@@ -689,9 +694,7 @@ fn register_alias(
             AliasKind::Motion => matches!(entry.kind, HotkeyKind::Motion | HotkeyKind::Idle),
         };
         if !kind_ok {
-            eprintln!(
-                "[vts] {kind_name} alias {label:?} targets {target:?} (wrong hotkey type)"
-            );
+            eprintln!("[vts] {kind_name} alias {label:?} targets {target:?} (wrong hotkey type)");
             continue;
         }
         if !keys.contains(&key) {
@@ -872,10 +875,7 @@ fn file_basename(path: &str) -> &str {
         .unwrap_or(path)
 }
 
-async fn wait_duration(
-    duration_ms: u64,
-    mut cancel_rx: oneshot::Receiver<()>,
-) -> WaitOutcome {
+async fn wait_duration(duration_ms: u64, mut cancel_rx: oneshot::Receiver<()>) -> WaitOutcome {
     tokio::select! {
         _ = &mut cancel_rx => WaitOutcome::Cancelled,
         _ = tokio::time::sleep(Duration::from_millis(duration_ms)) => {
@@ -1010,14 +1010,8 @@ mod tests {
         });
 
         let (_cancel_tx, cancel_rx) = oneshot::channel();
-        let (outcome, _cancel_rx) = wait_for_motion_end(
-            &mut rx,
-            TAP_MOTION,
-            cancel_rx,
-            Duration::from_secs(1),
-            100,
-        )
-        .await;
+        let (outcome, _cancel_rx) =
+            wait_for_motion_end(&mut rx, TAP_MOTION, cancel_rx, Duration::from_secs(1), 100).await;
         assert_eq!(outcome, MotionWaitOutcome::Completed);
     }
 
@@ -1052,14 +1046,8 @@ mod tests {
         ));
 
         let (_cancel_tx, cancel_rx) = oneshot::channel();
-        let (outcome, _) = wait_for_motion_end(
-            &mut rx,
-            TAP_MOTION,
-            cancel_rx,
-            Duration::from_millis(10),
-            1,
-        )
-        .await;
+        let (outcome, _) =
+            wait_for_motion_end(&mut rx, TAP_MOTION, cancel_rx, Duration::from_millis(10), 1).await;
         assert_eq!(outcome, MotionWaitOutcome::Fallback);
     }
 
@@ -1079,14 +1067,8 @@ mod tests {
         });
 
         let (_cancel_tx, cancel_rx) = oneshot::channel();
-        let (outcome, _) = wait_for_motion_end(
-            &mut rx,
-            TAP_MOTION,
-            cancel_rx,
-            Duration::from_secs(1),
-            100,
-        )
-        .await;
+        let (outcome, _) =
+            wait_for_motion_end(&mut rx, TAP_MOTION, cancel_rx, Duration::from_secs(1), 100).await;
         assert_eq!(outcome, MotionWaitOutcome::Completed);
     }
 
@@ -1096,14 +1078,8 @@ mod tests {
         let (cancel_tx, cancel_rx) = oneshot::channel();
         cancel_tx.send(()).unwrap();
 
-        let (outcome, _) = wait_for_motion_end(
-            &mut rx,
-            TAP_MOTION,
-            cancel_rx,
-            Duration::from_secs(1),
-            100,
-        )
-        .await;
+        let (outcome, _) =
+            wait_for_motion_end(&mut rx, TAP_MOTION, cancel_rx, Duration::from_secs(1), 100).await;
         assert_eq!(outcome, MotionWaitOutcome::Cancelled);
     }
 
@@ -1111,14 +1087,8 @@ mod tests {
     async fn wait_for_motion_end_falls_back_without_end() {
         let (_tx, mut rx) = motion_event_channel();
         let (_cancel_tx, cancel_rx) = oneshot::channel();
-        let (outcome, _) = wait_for_motion_end(
-            &mut rx,
-            TAP_MOTION,
-            cancel_rx,
-            Duration::from_millis(10),
-            1,
-        )
-        .await;
+        let (outcome, _) =
+            wait_for_motion_end(&mut rx, TAP_MOTION, cancel_rx, Duration::from_millis(10), 1).await;
         assert_eq!(outcome, MotionWaitOutcome::Fallback);
     }
 
@@ -1137,41 +1107,30 @@ mod tests {
 
     #[test]
     fn resolve_picks_from_allow_list() {
-        let aliases = HashMap::from([(
-            "idle".into(),
-            vec!["idle_0".into(), "idle_1".into()],
-        )]);
+        let aliases = HashMap::from([("idle".into(), vec!["idle_0".into(), "idle_1".into()])]);
         let resolved = resolve_llm_alias("idle", &aliases, "idle_0");
         assert!(resolved == "idle_0" || resolved == "idle_1");
+        assert_eq!(resolve_llm_alias("unknown", &aliases, "idle_0"), "idle_0");
         assert_eq!(
-            resolve_llm_alias("unknown", &aliases, "idle_0"),
-            "idle_0"
-        );
-        assert_eq!(
-            resolve_llm_alias("wave", &HashMap::from([(
-                "wave".into(),
-                vec!["tap_0".into()],
-            )]), "idle_0"),
+            resolve_llm_alias(
+                "wave",
+                &HashMap::from([("wave".into(), vec!["tap_0".into()],)]),
+                "idle_0"
+            ),
             "tap_0"
         );
     }
 
     #[test]
     fn loop_name_uses_alias_when_allow_list_has_multiple() {
-        let aliases = HashMap::from([(
-            "idle".into(),
-            vec!["idle_0".into(), "idle_1".into()],
-        )]);
+        let aliases = HashMap::from([("idle".into(), vec!["idle_0".into(), "idle_1".into()])]);
         assert_eq!(loop_name_for_key("idle_0", &aliases), "idle");
         assert_eq!(loop_name_for_key("tap_0", &aliases), "tap_0");
     }
 
     #[test]
     fn default_alias_finds_label_for_any_allow_list_member() {
-        let aliases = HashMap::from([(
-            "idle".into(),
-            vec!["idle_0".into(), "idle_1".into()],
-        )]);
+        let aliases = HashMap::from([("idle".into(), vec!["idle_0".into(), "idle_1".into()])]);
         assert_eq!(default_alias_for_key("idle_1", &aliases), "idle");
     }
 
@@ -1210,10 +1169,7 @@ mod tests {
             "thinking"
         );
 
-        let idle_aliases = HashMap::from([(
-            "idle".into(),
-            vec!["idle_0".into(), "idle_1".into()],
-        )]);
+        let idle_aliases = HashMap::from([("idle".into(), vec!["idle_0".into(), "idle_1".into()])]);
         assert_eq!(
             waiting_loop_label(&loop_test_cache(), &idle_aliases, "idle_0"),
             "idle"

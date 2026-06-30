@@ -133,8 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             (now.duration_since(unchanged_since), changed)
         };
 
-        let static_screen_threshold =
-            std::time::Duration::from_secs(config.idle.idle_timeout_secs);
+        let static_screen_threshold = std::time::Duration::from_secs(config.idle.idle_timeout_secs);
 
         if screen_changed {
             stop_monologue(&state).await;
@@ -231,7 +230,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut cancel = state.vts_cancel_tx.lock().await;
                 *cancel = Some(cancel_tx2);
             }
-            state.vts_player.play_looping(&default_loop_name, cancel_rx2).await;
+            state
+                .vts_player
+                .play_looping(&default_loop_name, cancel_rx2)
+                .await;
         });
     }
 
