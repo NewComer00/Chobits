@@ -34,3 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Features
 
 - feat: add macOS support (build CI, install script, docs)
+## [v0.5.0] - 2026-06-30
+
+### Features
+
+- feat: replace OSF expressions with live-ascii VTS hotkeys
+
+### Bug Fixes
+
+- fix: treat empty Zellij session list as first-launch success
+- fix: bypass HTTP proxy for localhost snapshot traffic
+
+### Chores
+
+- docs: update README
+- docs: update README
+- docs: update readme
