@@ -48,18 +48,7 @@ impl ZellijRunner {
             .args(["list-sessions", "--no-formatting"])
             .output()?;
 
-        if !output.status.success() {
-            let msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(std::io::Error::other(if msg.is_empty() {
-                format!("zellij list-sessions exited with {}", output.status)
-            } else {
-                format!("zellij list-sessions failed: {msg}")
-            }));
-        }
-
-        Ok(filter_chobits_sessions(&String::from_utf8_lossy(
-            &output.stdout,
-        )))
+        parse_list_sessions_output(&output)
     }
 
     pub fn new_session(
@@ -140,6 +129,34 @@ pub fn grant_plugin_permission(wasm_path: &Path, permissions: &[&str]) -> std::i
 
 fn kdl_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn is_no_active_sessions(msg: &str) -> bool {
+    msg.to_ascii_lowercase()
+        .contains("no active zellij sessions")
+}
+
+fn parse_list_sessions_output(output: &std::process::Output) -> std::io::Result<Vec<String>> {
+    if output.status.success() {
+        return Ok(filter_chobits_sessions(&String::from_utf8_lossy(
+            &output.stdout,
+        )));
+    }
+
+    let stderr_buf = String::from_utf8_lossy(&output.stderr);
+    let stdout_buf = String::from_utf8_lossy(&output.stdout);
+    let stderr = stderr_buf.trim();
+    let stdout = stdout_buf.trim();
+    if is_no_active_sessions(stderr) || is_no_active_sessions(stdout) {
+        return Ok(Vec::new());
+    }
+
+    let msg = if stderr.is_empty() { stdout } else { stderr };
+    Err(std::io::Error::other(if msg.is_empty() {
+        format!("zellij list-sessions exited with {}", output.status)
+    } else {
+        format!("zellij list-sessions failed: {msg}")
+    }))
 }
 
 fn filter_chobits_sessions(text: &str) -> Vec<String> {
@@ -266,6 +283,63 @@ mod tests {
         let reparsed = parse_permissions_kdl(&render_permissions_kdl(&entries));
         assert_eq!(reparsed.len(), 1);
         assert_eq!(reparsed[0].1, new_perms);
+    }
+
+    #[test]
+    fn is_no_active_sessions_recognizes_zellij_message() {
+        assert!(is_no_active_sessions("No active zellij sessions found."));
+        assert!(!is_no_active_sessions("permission denied"));
+    }
+
+    #[test]
+    fn parse_list_sessions_output_treats_no_sessions_as_empty() {
+        use std::process::Output;
+
+        let status = std::process::Command::new("sh")
+            .args(["-c", "exit 1"])
+            .status()
+            .unwrap();
+        let output = Output {
+            status,
+            stdout: Vec::new(),
+            stderr: b"No active zellij sessions found.\n".to_vec(),
+        };
+        assert!(parse_list_sessions_output(&output).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_list_sessions_output_surfaces_other_failures() {
+        use std::process::Output;
+
+        let status = std::process::Command::new("sh")
+            .args(["-c", "exit 1"])
+            .status()
+            .unwrap();
+        let output = Output {
+            status,
+            stdout: Vec::new(),
+            stderr: b"permission denied\n".to_vec(),
+        };
+        assert!(parse_list_sessions_output(&output).is_err());
+    }
+
+    #[test]
+    fn parse_list_sessions_output_filters_successful_stdout() {
+        use std::process::Output;
+
+        let status = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .status()
+            .unwrap();
+        let output = Output {
+            status,
+            stdout: b"chobits-live attached\n".to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            parse_list_sessions_output(&output).unwrap(),
+            vec!["chobits-live".to_string()]
+        );
     }
 
     #[test]
